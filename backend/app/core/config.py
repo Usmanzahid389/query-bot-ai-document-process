@@ -14,5 +14,17 @@ class Settings(BaseSettings):
     upload_dir: Path = Path(__file__).resolve().parent.parent.parent / "uploads"
     max_upload_bytes: int = 10 * 1024 * 1024
 
+    # RAG: Chroma + Hugging Face embeddings + Ollama LLM
+    chroma_dir: Path = Path(__file__).resolve().parent.parent.parent / "chroma_db"
+    chroma_collection: str = "querybot_documents"
+    embedding_model_id: str = "sentence-transformers/all-MiniLM-L6-v2"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "llama3.2"
+    ollama_timeout_seconds: float = 180.0
+    rag_chunk_size: int = 900
+    rag_chunk_overlap: int = 120
+    rag_top_k: int = 6
+    rag_summary_top_k: int = 12
+
 
 settings = Settings()

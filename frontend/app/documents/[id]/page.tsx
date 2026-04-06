@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import {
   api,
   downloadBlob,
+  fetchDocumentFile,
   type ChatMessage,
   type ChatSendResponse,
   type ChatSession,
@@ -30,6 +31,13 @@ export default function DocumentChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+
+  const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
+  const [textFilePreview, setTextFilePreview] = useState<string | null>(null);
+  const [previewKind, setPreviewKind] = useState<"pdf" | "text" | "office" | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
   const documentIds = useMemo(() => {
     const set = new Set<string>([id, ...extraIds]);
@@ -59,6 +67,64 @@ export default function DocumentChatPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!doc) return;
+
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setFileBlobUrl(null);
+    setTextFilePreview(null);
+    setPreviewKind(null);
+    setPreviewError(null);
+
+    let cancelled = false;
+
+    (async () => {
+      setPreviewLoading(true);
+      try {
+        const blob = await fetchDocumentFile(id);
+        const mt = doc.mime_type.toLowerCase();
+        if (mt.includes("pdf")) {
+          const url = URL.createObjectURL(blob);
+          previewUrlRef.current = url;
+          if (!cancelled) {
+            setFileBlobUrl(url);
+            setPreviewKind("pdf");
+          }
+        } else if (mt.startsWith("text/")) {
+          const text = await blob.text();
+          if (!cancelled) {
+            setTextFilePreview(text);
+            setPreviewKind("text");
+          }
+        } else if (mt.includes("wordprocessingml") || mt.includes("msword")) {
+          const url = URL.createObjectURL(blob);
+          previewUrlRef.current = url;
+          if (!cancelled) {
+            setFileBlobUrl(url);
+            setPreviewKind("office");
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setPreviewError(e instanceof Error ? e.message : "Could not load file for preview");
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, [doc, id]);
 
   async function loadMessages(sid: string) {
     const msgs = await api<ChatMessage[]>(`/chat/sessions/${sid}/messages`);
@@ -148,7 +214,12 @@ export default function DocumentChatPage() {
               ← All documents
             </button>
             <h1 className="mt-2 text-xl font-semibold text-zinc-900 dark:text-zinc-50">{doc.original_filename}</h1>
-            <p className="mt-1 text-xs text-zinc-500">Preview: {doc.text_preview.slice(0, 200)}…</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Text extract:{" "}
+              {doc.text_preview.length > 200
+                ? `${doc.text_preview.slice(0, 200)}…`
+                : doc.text_preview || "(empty)"}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -182,6 +253,43 @@ export default function DocumentChatPage() {
             </button>
           </div>
         </div>
+
+        <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
+          <h2 className="border-b border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-900 dark:border-zinc-800 dark:text-zinc-100">
+            File preview
+          </h2>
+          {previewLoading && <p className="p-4 text-sm text-zinc-500">Loading preview…</p>}
+          {previewError && (
+            <p className="p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
+          )}
+          {!previewLoading && !previewError && previewKind === "pdf" && fileBlobUrl && (
+            <iframe
+              title="PDF preview"
+              src={fileBlobUrl}
+              className="block h-[min(70vh,640px)] w-full bg-zinc-100 dark:bg-zinc-950"
+            />
+          )}
+          {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
+            <pre className="max-h-[min(70vh,640px)] overflow-auto whitespace-pre-wrap break-words p-4 text-xs text-zinc-800 dark:text-zinc-200">
+              {textFilePreview || "(empty file)"}
+            </pre>
+          )}
+          {!previewLoading && !previewError && previewKind === "office" && fileBlobUrl && (
+            <div className="space-y-3 p-4 text-sm text-zinc-600 dark:text-zinc-400">
+              <p>Browsers cannot show Word (.docx) inline here. Open the file in Word or download it.</p>
+              <button
+                type="button"
+                onClick={() => window.open(fileBlobUrl, "_blank", "noopener,noreferrer")}
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                Open / download file
+              </button>
+            </div>
+          )}
+          {!previewLoading && !previewError && previewKind === null && (
+            <p className="p-4 text-sm text-zinc-500">No preview for this file type.</p>
+          )}
+        </section>
 
         {summary && (
           <div className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-200">
@@ -255,7 +363,9 @@ export default function DocumentChatPage() {
           <div className="flex min-h-[420px] flex-col rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {messages.length === 0 && (
-                <p className="text-sm text-zinc-500">Ask a question about this document. Responses are mocked for MVP.</p>
+                <p className="text-sm text-zinc-500">
+                  Ask a question about this document. Replies use RAG + Ollama (first reply can take a minute).
+                </p>
               )}
               {messages.map((m) => (
                 <div
