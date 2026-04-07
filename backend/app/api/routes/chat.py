@@ -175,10 +175,10 @@ async def send_message(
             body.message,
         )
     except Exception:
-        logger.exception("RAG/Ollama failed for chat message")
+        logger.exception("RAG/OpenRouter failed for chat message")
         answer = (
-            "Could not get an AI reply. Check that Ollama is running, the model is pulled "
-            f"(e.g. ollama pull llama3.2), and the server can reach {settings.ollama_base_url}. "
+            "Could not get an AI reply. Check that LLM_API_KEY is set, "
+            f"the model '{settings.llm_model}' is available, and the server can reach {settings.llm_base_url}. "
             "See the API terminal log for details."
         )
     if not isinstance(answer, str):

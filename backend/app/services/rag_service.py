@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import Sequence
 
@@ -8,7 +9,7 @@ from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document as LCDocument
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import settings
@@ -125,12 +126,13 @@ def _format_context(chunks: list[LCDocument]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _llm() -> ChatOllama:
-    return ChatOllama(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
+def _llm() -> ChatOpenAI:
+    return ChatOpenAI(
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        api_key=settings.llm_api_key,
         temperature=0.1,
-        timeout=settings.ollama_timeout_seconds,
+        timeout=settings.llm_timeout_seconds,
     )
 
 
@@ -149,6 +151,33 @@ def _message_content(out: object) -> str:
     else:
         text = str(raw)
     return text.replace("\x00", "")
+
+
+def _is_rate_limited_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "429" in msg or "rate limit" in msg or "rate-limited" in msg
+
+
+def _invoke_with_retries(chain, payload: dict[str, str], retries: int = 2) -> object:
+    last_exc: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            return chain.invoke(payload)
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= retries or not _is_rate_limited_error(exc):
+                raise
+            sleep_s = 1.5 * (attempt + 1)
+            logger.warning(
+                "LLM rate limited (attempt %s/%s). Retrying in %.1fs",
+                attempt + 1,
+                retries + 1,
+                sleep_s,
+            )
+            time.sleep(sleep_s)
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("LLM call failed without an exception")
 
 
 def answer_question(
@@ -177,19 +206,16 @@ def answer_question(
     prompt = ChatPromptTemplate.from_messages(
         [
             (
-                "system",
+                "human",
                 "You are a careful assistant. Answer ONLY using the CONTEXT below. "
                 "If the answer is not in the context, say you cannot find it in the document. "
-                "When you use information, cite the bracket number [n] from the context.",
-            ),
-            (
-                "human",
+                "When you use information, cite the bracket number [n] from the context.\n\n"
                 "CONTEXT:\n{context}\n\nQUESTION:\n{question}",
             ),
         ]
     )
     chain = prompt | _llm()
-    out = chain.invoke({"context": context, "question": question})
+    out = _invoke_with_retries(chain, {"context": context, "question": question})
     return _message_content(out)
 
 
@@ -214,17 +240,14 @@ def summarize_document_rag(
     prompt = ChatPromptTemplate.from_messages(
         [
             (
-                "system",
-                "Summarize ONLY from the CONTEXT. If context is insufficient, say so.",
-            ),
-            (
                 "human",
+                "Summarize ONLY from the CONTEXT. If context is insufficient, say so.\n\n"
                 "Document title: {title}\n\nCONTEXT:\n{context}\n\nWrite the summary.",
             ),
         ]
     )
     chain = prompt | _llm()
-    out = chain.invoke({"title": document_title, "context": context})
+    out = _invoke_with_retries(chain, {"title": document_title, "context": context})
     return _message_content(out)
 
 
@@ -258,17 +281,14 @@ def compare_documents_rag(
     prompt = ChatPromptTemplate.from_messages(
         [
             (
-                "system",
+                "human",
                 "Compare the two documents using ONLY the CONTEXT. "
                 "Cover similarities, differences, and practical implications. "
-                "Cite [n] from each section when referencing.",
-            ),
-            (
-                "human",
+                "Cite [n] from each section when referencing.\n\n"
                 "{context}\n\nWrite the comparison.",
             ),
         ]
     )
     chain = prompt | _llm()
-    out = chain.invoke({"context": context})
+    out = _invoke_with_retries(chain, {"context": context})
     return _message_content(out)

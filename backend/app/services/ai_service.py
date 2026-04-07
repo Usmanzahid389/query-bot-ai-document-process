@@ -1,6 +1,6 @@
 """
 Legacy MVP mocks are kept below (commented). Production paths use rag_service:
-Chroma vector store, Hugging Face sentence-transformers embeddings, Ollama LLM.
+Chroma vector store, Hugging Face sentence-transformers embeddings, OpenRouter LLM.
 """
 
 from __future__ import annotations
