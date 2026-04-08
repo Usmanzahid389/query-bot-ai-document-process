@@ -81,6 +81,16 @@ export async function uploadDocument(file: File): Promise<Document> {
   return res.json();
 }
 
+/** Fetch raw file bytes (auth). Use createObjectURL for PDF preview in iframe. */
+export async function fetchDocumentFile(documentId: string): Promise<Blob> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(`${API}/documents/${documentId}/file`, { headers });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.blob();
+}
+
 export async function downloadBlob(pathWithQuery: string, filename: string): Promise<void> {
   const token = getToken();
   const headers = new Headers();

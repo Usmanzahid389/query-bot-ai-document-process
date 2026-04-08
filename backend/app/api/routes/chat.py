@@ -1,4 +1,7 @@
+import asyncio
+import logging
 import uuid
+from types import SimpleNamespace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.chat import ChatSession, ChatSessionDocument, Message
 from app.models.document import Document
@@ -20,7 +24,9 @@ from app.schemas.chat import (
     ChatSessionOut,
     SendMessageRequest,
 )
-from app.services import ai_service
+from app.services import rag_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -123,8 +129,6 @@ async def send_message(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ChatSendResponse:
     docs = await _get_owned_documents(db, current.id, body.document_ids)
-    names = [d.original_filename for d in docs]
-    context = "\n\n".join((d.extracted_text or "")[:8000] for d in docs)
 
     if body.session_id is None:
         title = f"Chat — {docs[0].original_filename}"
@@ -153,7 +157,33 @@ async def send_message(
     db.add(user_msg)
     await db.flush()
 
-    answer = ai_service.mock_answer(body.message, names, context)
+    # Snapshot plain data: SQLAlchemy ORM instances must not be used inside the worker
+    # thread (greenlet / session bound to async context → 500 on attribute access).
+    doc_snapshots = [
+        SimpleNamespace(
+            id=d.id,
+            original_filename=d.original_filename,
+            extracted_text=d.extracted_text or "",
+        )
+        for d in docs
+    ]
+    try:
+        answer = await asyncio.to_thread(
+            rag_service.answer_question,
+            current.id,
+            doc_snapshots,
+            body.message,
+        )
+    except Exception:
+        logger.exception("RAG/OpenRouter failed for chat message")
+        answer = (
+            "Could not get an AI reply. Check that LLM_API_KEY is set, "
+            f"the model '{settings.llm_model}' is available, and the server can reach {settings.llm_base_url}. "
+            "See the API terminal log for details."
+        )
+    if not isinstance(answer, str):
+        answer = str(answer) if answer is not None else ""
+    answer = answer.replace("\x00", "")
     assistant_msg = Message(session_id=session.id, role="assistant", content=answer)
     db.add(assistant_msg)
     await db.commit()
@@ -194,7 +224,11 @@ async def compare_documents(
         raise HTTPException(status_code=404, detail="One or both documents not found")
     da = docs[body.document_id_a]
     doc_b = docs[body.document_id_b]
-    analysis = ai_service.mock_compare(
+    analysis = await asyncio.to_thread(
+        rag_service.compare_documents_rag,
+        current.id,
+        body.document_id_a,
+        body.document_id_b,
         da.original_filename,
         doc_b.original_filename,
         da.extracted_text or "",

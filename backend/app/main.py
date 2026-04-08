@@ -13,6 +13,7 @@ from app.core.database import init_db
 async def lifespan(_app: FastAPI):
     await init_db()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    settings.chroma_dir.mkdir(parents=True, exist_ok=True)
     yield
 
 

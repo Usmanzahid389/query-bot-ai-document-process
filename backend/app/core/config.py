@@ -14,5 +14,18 @@ class Settings(BaseSettings):
     upload_dir: Path = Path(__file__).resolve().parent.parent.parent / "uploads"
     max_upload_bytes: int = 10 * 1024 * 1024
 
+    # RAG: Chroma + Hugging Face embeddings + OpenRouter LLM
+    chroma_dir: Path = Path(__file__).resolve().parent.parent.parent / "chroma_db"
+    chroma_collection: str = "querybot_documents"
+    embedding_model_id: str = "sentence-transformers/all-MiniLM-L6-v2"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
+    llm_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    llm_api_key: str = ""
+    llm_timeout_seconds: float = 180.0
+    rag_chunk_size: int = 900
+    rag_chunk_overlap: int = 120
+    rag_top_k: int = 4
+    rag_summary_top_k: int = 8
+
 
 settings = Settings()

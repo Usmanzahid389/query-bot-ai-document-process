@@ -1,7 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _ensure_utc_dt(v: Any) -> Any:
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
 
 
 class ChatSessionCreate(BaseModel):
@@ -17,6 +24,11 @@ class ChatMessageOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def created_at_utc(cls, v: Any) -> Any:
+        return _ensure_utc_dt(v)
+
 
 class ChatSessionOut(BaseModel):
     id: UUID
@@ -25,6 +37,11 @@ class ChatSessionOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def created_at_utc(cls, v: Any) -> Any:
+        return _ensure_utc_dt(v)
 
 
 class SendMessageRequest(BaseModel):

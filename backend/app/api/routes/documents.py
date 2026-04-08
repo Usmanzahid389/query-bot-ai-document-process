@@ -1,8 +1,11 @@
+import asyncio
+import logging
 import uuid
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,8 +16,10 @@ from app.models.document import Document
 from app.models.user import User
 from app.schemas.chat import SummaryResponse
 from app.schemas.document import DocumentOut
-from app.services import ai_service
-from app.services.document_parser import extract_text_from_file
+from app.services.document_parser import extract_pages_from_file, extract_text_from_file
+from app.services import rag_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -26,11 +31,15 @@ _EXT_MIME = {
 }
 
 
+def _safe_preview(text: str, limit: int = 500) -> str:
+    raw = (text or "")[:limit]
+    if len(text or "") > limit:
+        raw += "…"
+    return raw.encode("utf-8", errors="replace").decode("utf-8")
+
+
 def _document_to_out(d: Document) -> DocumentOut:
-    text = d.extracted_text or ""
-    preview = text[:500]
-    if len(text) > 500:
-        preview += "…"
+    preview = _safe_preview(d.extracted_text or "", 500)
     return DocumentOut(
         id=d.id,
         original_filename=d.original_filename,
@@ -69,16 +78,25 @@ async def upload_document(
     path = settings.upload_dir / safe_name
     path.write_bytes(raw)
 
+    original_name = (file.filename or "file")[:512]
+
     try:
         extracted = extract_text_from_file(path, mime)
     except ValueError as e:
         path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        path.unlink(missing_ok=True)
+        logger.exception("extract_text_from_file failed")
+        raise HTTPException(
+            status_code=400,
+            detail="Could not read this file. Try another PDF/DOCX/TXT or check if the PDF is corrupted or image-only.",
+        ) from e
 
     doc = Document(
         id=doc_id,
         user_id=current.id,
-        original_filename=file.filename,
+        original_filename=original_name,
         stored_path=str(path),
         mime_type=mime,
         size_bytes=len(raw),
@@ -87,6 +105,22 @@ async def upload_document(
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
+
+    try:
+        pages = extract_pages_from_file(path, mime)
+        await asyncio.to_thread(
+            rag_service.index_document,
+            current.id,
+            doc.id,
+            doc.original_filename,
+            pages,
+        )
+    except Exception:
+        logger.exception(
+            "RAG indexing failed for document %s; will retry on first query",
+            doc.id,
+        )
+
     return _document_to_out(doc)
 
 
@@ -100,6 +134,30 @@ async def list_documents(
     )
     rows = result.scalars().all()
     return [_document_to_out(d) for d in rows]
+
+
+@router.get("/{document_id}/file")
+async def get_document_file(
+    document_id: uuid.UUID,
+    current: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FileResponse:
+    """Return the stored upload for preview/download (same user only)."""
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current.id)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    path = Path(doc.stored_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on server")
+    return FileResponse(
+        path=path,
+        media_type=doc.mime_type,
+        filename=doc.original_filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
@@ -129,6 +187,7 @@ async def delete_document(
     doc = result.scalar_one_or_none()
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    await asyncio.to_thread(rag_service.delete_document_index, document_id)
     Path(doc.stored_path).unlink(missing_ok=True)
     await db.delete(doc)
     await db.commit()
@@ -146,5 +205,11 @@ async def summarize_document(
     doc = result.scalar_one_or_none()
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    summary = ai_service.mock_summary(doc.original_filename, doc.extracted_text or "")
+    summary = await asyncio.to_thread(
+        rag_service.summarize_document_rag,
+        current.id,
+        doc.id,
+        doc.original_filename,
+        doc.extracted_text or "",
+    )
     return SummaryResponse(document_id=doc.id, summary=summary)

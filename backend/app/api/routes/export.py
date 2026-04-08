@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from typing import Annotated
 
@@ -12,7 +13,7 @@ from app.core.database import get_db
 from app.models.chat import ChatSession, Message
 from app.models.document import Document
 from app.models.user import User
-from app.services import ai_service
+from app.services import rag_service
 from app.services.export_render import render_docx, render_pdf
 
 router = APIRouter(prefix="/export", tags=["export"])
@@ -79,7 +80,13 @@ async def export_summary(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    summary = ai_service.mock_summary(doc.original_filename, doc.extracted_text or "")
+    summary = await asyncio.to_thread(
+        rag_service.summarize_document_rag,
+        current.id,
+        doc.id,
+        doc.original_filename,
+        doc.extracted_text or "",
+    )
     title = f"Summary — {doc.original_filename}"
     paras = [p.strip() for p in summary.split("\n\n") if p.strip()]
     if fmt == "pdf":
