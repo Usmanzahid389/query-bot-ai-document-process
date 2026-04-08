@@ -16,8 +16,6 @@ from app.models.chat import ChatSession, ChatSessionDocument, Message
 from app.models.document import Document
 from app.models.user import User
 from app.schemas.chat import (
-    ChatCompareRequest,
-    ChatCompareResponse,
     ChatMessageOut,
     ChatSendResponse,
     ChatSessionCreate,
@@ -204,38 +202,4 @@ async def send_message(
             content=assistant_msg.content,
             created_at=assistant_msg.created_at,
         ),
-    )
-
-
-@router.post("/compare", response_model=ChatCompareResponse)
-async def compare_documents(
-    body: ChatCompareRequest,
-    current: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> ChatCompareResponse:
-    result = await db.execute(
-        select(Document).where(
-            Document.user_id == current.id,
-            Document.id.in_([body.document_id_a, body.document_id_b]),
-        )
-    )
-    docs = {d.id: d for d in result.scalars().all()}
-    if len(docs) != 2:
-        raise HTTPException(status_code=404, detail="One or both documents not found")
-    da = docs[body.document_id_a]
-    doc_b = docs[body.document_id_b]
-    analysis = await asyncio.to_thread(
-        rag_service.compare_documents_rag,
-        current.id,
-        body.document_id_a,
-        body.document_id_b,
-        da.original_filename,
-        doc_b.original_filename,
-        da.extracted_text or "",
-        doc_b.extracted_text or "",
-    )
-    return ChatCompareResponse(
-        document_a_title=da.original_filename,
-        document_b_title=doc_b.original_filename,
-        analysis=analysis,
     )

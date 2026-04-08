@@ -38,22 +38,3 @@ from __future__ import annotations
 #         f"Final notes would highlight implications, limitations, and follow-up questions. "
 #         f"This structured three-paragraph summary is fixed for MVP testing only."
 #     )
-#
-#
-# def mock_compare(
-#     doc_a_title: str,
-#     doc_b_title: str,
-#     excerpt_a: str,
-#     excerpt_b: str,
-# ) -> str:
-#     a = excerpt_a[:350] + ("…" if len(excerpt_a) > 350 else "")
-#     b = excerpt_b[:350] + ("…" if len(excerpt_b) > 350 else "")
-#     return (
-#         f"**Similarities (mock)**\n"
-#         f"Both “{doc_a_title}” and “{doc_b_title}” are being compared in QueryBot MVP mode. "
-#         f"A future version would embed both documents and list thematic overlap.\n\n"
-#         f"**Differences (mock)**\n"
-#         f"Side A emphasizes content starting with: {a or '(empty)'}\n"
-#         f"Side B emphasizes content starting with: {b or '(empty)'}\n\n"
-#         f"**Note:** This analysis is hardcoded for MVP; replace `mock_compare` in `ai_service.py` for real insights."
-#     )

@@ -45,12 +45,6 @@ export type ChatSendResponse = {
 
 export type SummaryResponse = { document_id: string; summary: string };
 
-export type CompareResponse = {
-  document_a_title: string;
-  document_b_title: string;
-  analysis: string;
-};
-
 type Opts = RequestInit & { token?: string | null };
 
 export async function api<T>(path: string, opts: Opts = {}): Promise<T> {

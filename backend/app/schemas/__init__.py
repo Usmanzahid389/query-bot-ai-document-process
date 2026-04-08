@@ -1,7 +1,5 @@
 from app.schemas.auth import Token, TokenPayload, UserCreate, UserOut
 from app.schemas.chat import (
-    ChatCompareRequest,
-    ChatCompareResponse,
     ChatMessageOut,
     ChatSendResponse,
     ChatSessionCreate,
@@ -22,7 +20,5 @@ __all__ = [
     "ChatMessageOut",
     "SendMessageRequest",
     "SummaryResponse",
-    "ChatCompareRequest",
-    "ChatCompareResponse",
     "ChatSendResponse",
 ]
