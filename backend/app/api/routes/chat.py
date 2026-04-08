@@ -173,10 +173,11 @@ async def send_message(
             body.message,
         )
     except Exception:
-        logger.exception("RAG/OpenRouter failed for chat message")
+        logger.exception("RAG LLM call failed for chat message")
         answer = (
-            "Could not get an AI reply. Check that LLM_API_KEY is set, "
-            f"the model '{settings.llm_model}' is available, and the server can reach {settings.llm_base_url}. "
+            "Could not get an AI reply. Check LLM_API_KEY, that LLM_MODEL is valid for your provider "
+            f"(current: '{settings.llm_model}' at {settings.llm_base_url}), and the server can reach that URL. "
+            "If you use Groq, model IDs look like 'llama-3.3-70b-versatile', not OpenRouter slugs. "
             "See the API terminal log for details."
         )
     if not isinstance(answer, str):
