@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     upload_dir: Path = Path(__file__).resolve().parent.parent.parent / "uploads"
     max_upload_bytes: int = 10 * 1024 * 1024
 
-    # RAG: Chroma + Hugging Face embeddings + OpenRouter LLM
+    # RAG: Chroma + Hugging Face embeddings + OpenAI-compatible LLM (OpenRouter, Groq, etc.)
     chroma_dir: Path = Path(__file__).resolve().parent.parent.parent / "chroma_db"
     chroma_collection: str = "querybot_documents"
     embedding_model_id: str = "sentence-transformers/all-MiniLM-L6-v2"

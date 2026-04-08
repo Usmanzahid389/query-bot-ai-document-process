@@ -45,9 +45,6 @@ export function Nav() {
               <Link className={navLinkClass("/documents")} href="/documents">
                 Documents
               </Link>
-              <Link className={navLinkClass("/compare")} href="/compare">
-                Compare
-              </Link>
               <button
                 type="button"
                 onClick={logout}

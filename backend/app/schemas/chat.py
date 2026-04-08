@@ -55,17 +55,6 @@ class SummaryResponse(BaseModel):
     summary: str
 
 
-class ChatCompareRequest(BaseModel):
-    document_id_a: UUID
-    document_id_b: UUID
-
-
-class ChatCompareResponse(BaseModel):
-    document_a_title: str
-    document_b_title: str
-    analysis: str
-
-
 class ChatSendResponse(BaseModel):
     session_id: UUID
     user_message: ChatMessageOut

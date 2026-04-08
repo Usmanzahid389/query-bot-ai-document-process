@@ -67,7 +67,7 @@ cd frontend
 npm run dev
 ```
 
-App: `http://localhost:3000` — register, upload PDF/DOCX/TXT (≤ 10 MB), chat (mock answers), summaries, compare two docs, export chat/summary as PDF or DOCX.
+App: `http://localhost:3000` — register, upload PDF/DOCX/TXT (≤ 10 MB), chat (mock answers), summaries, export chat/summary as PDF or DOCX.
 
 ## MVP notes
 
