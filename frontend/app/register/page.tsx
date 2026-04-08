@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { api, type User } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 
@@ -110,14 +111,9 @@ export default function RegisterPage() {
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-blue-700"
                 >
                   {showPassword ? (
-                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                      <path d="M3 3l18 18M9.9 4.24A10.02 10.02 0 0 1 12 4c7 0 10 7 10 7s-1.156 2.001-3.01 3.71M9.153 9.153a3 3 0 1 0 4.242 4.243" />
-                    </svg>
+                    <Eye className="h-5 w-5" strokeWidth={1.8} aria-hidden />
                   ) : (
-                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                      <path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
+                    <EyeOff className="h-5 w-5" strokeWidth={1.8} aria-hidden />
                   )}
                 </button>
               </div>
