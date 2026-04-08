@@ -12,6 +12,7 @@ function LoginForm() {
   const next = searchParams.get("next") ?? "/documents";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -88,18 +89,13 @@ function LoginForm() {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="password" className="block text-sm font-semibold text-slate-700">
-                  Password
-                </label>
-                <button type="button" className="text-xs font-semibold text-blue-700 transition-colors hover:text-blue-800">
-                  Forgot Password?
-                </button>
-              </div>
+              <label htmlFor="password" className="block text-sm font-semibold text-slate-700">
+                Password
+              </label>
               <div className="relative">
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   required
                   minLength={8}
@@ -110,13 +106,20 @@ function LoginForm() {
                 />
                 <button
                   type="button"
-                  aria-label="Toggle password visibility"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
                 >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                    <path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
+                  {showPassword ? (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                      <path d="M3 3l18 18M9.9 4.24A10.02 10.02 0 0 1 12 4c7 0 10 7 10 7s-1.156 2.001-3.01 3.71M9.153 9.153a3 3 0 1 0 4.242 4.243" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                      <path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>
