@@ -203,29 +203,29 @@ export default function DocumentChatPage() {
 
   return (
     <RequireAuth>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+      <div className="space-y-5 rounded-3xl bg-gradient-to-br from-slate-50 via-white to-blue-50/40 p-4 shadow-sm sm:p-6 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
+        <div className="flex flex-wrap items-start justify-between gap-4 rounded-3xl bg-gradient-to-r from-white via-slate-50 to-blue-50 p-5 shadow-md shadow-slate-200/60 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800">
+          <div className="min-w-0 flex-1">
             <button
               type="button"
               onClick={() => router.push("/documents")}
-              className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+              className="inline-flex items-center rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm transition hover:bg-white hover:text-slate-800 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
             >
               ← All documents
             </button>
-            <h1 className="mt-2 text-xl font-semibold text-zinc-900 dark:text-zinc-50">{doc.original_filename}</h1>
-            <p className="mt-1 text-xs text-zinc-500">
+            <h1 className="mt-3 truncate text-2xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">{doc.original_filename}</h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-zinc-300">
               Text extract:{" "}
               {doc.text_preview.length > 200
                 ? `${doc.text_preview.slice(0, 200)}…`
                 : doc.text_preview || "(empty)"}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white/80 p-1.5 shadow-sm dark:bg-zinc-800/80">
             <button
               type="button"
               onClick={onSummary}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600"
+              className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-zinc-700 dark:text-zinc-100"
             >
               Generate summary
             </button>
@@ -236,7 +236,7 @@ export default function DocumentChatPage() {
                   setError(e instanceof Error ? e.message : "Export failed")
                 )
               }
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600"
+              className="rounded-xl bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-200 dark:bg-blue-600/30 dark:text-blue-200"
             >
               Export summary PDF
             </button>
@@ -247,184 +247,197 @@ export default function DocumentChatPage() {
                   setError(e instanceof Error ? e.message : "Export failed")
                 )
               }
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600"
+              className="rounded-xl bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-200 dark:bg-blue-600/30 dark:text-blue-200"
             >
               Export summary DOCX
             </button>
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
-          <h2 className="border-b border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-900 dark:border-zinc-800 dark:text-zinc-100">
-            File preview
-          </h2>
-          {previewLoading && <p className="p-4 text-sm text-zinc-500">Loading preview…</p>}
-          {previewError && (
-            <p className="p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
-          )}
-          {!previewLoading && !previewError && previewKind === "pdf" && fileBlobUrl && (
-            <iframe
-              title="PDF preview"
-              src={fileBlobUrl}
-              className="block h-[min(70vh,640px)] w-full bg-zinc-100 dark:bg-zinc-950"
-            />
-          )}
-          {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
-            <pre className="max-h-[min(70vh,640px)] overflow-auto whitespace-pre-wrap break-words p-4 text-xs text-zinc-800 dark:text-zinc-200">
-              {textFilePreview || "(empty file)"}
-            </pre>
-          )}
-          {!previewLoading && !previewError && previewKind === "office" && fileBlobUrl && (
-            <div className="space-y-3 p-4 text-sm text-zinc-600 dark:text-zinc-400">
-              <p>Browsers cannot show Word (.docx) inline here. Open the file in Word or download it.</p>
-              <button
-                type="button"
-                onClick={() => window.open(fileBlobUrl, "_blank", "noopener,noreferrer")}
-                className="rounded-md bg-zinc-900 px-3 py-1.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
-              >
-                Open / download file
-              </button>
-            </div>
-          )}
-          {!previewLoading && !previewError && previewKind === null && (
-            <p className="p-4 text-sm text-zinc-500">No preview for this file type.</p>
-          )}
-        </section>
-
-        {summary && (
-          <div className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-200">
-            <h2 className="font-medium text-zinc-900 dark:text-zinc-100">Summary</h2>
-            <div className="prose prose-sm mt-2 max-w-none whitespace-pre-wrap dark:prose-invert">{summary}</div>
-          </div>
-        )}
-
-        {allDocs.length > 0 && (
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
-            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Multi-document context</p>
-            <p className="text-xs text-zinc-500">
-              Include additional uploaded files when starting a new thread only (locked while a saved session is selected).
-            </p>
-            <ul className="mt-2 space-y-1">
-              {allDocs.map((d) => (
-                <li key={d.id}>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      disabled={!!sessionId}
-                      checked={extraIds.includes(d.id)}
-                      onChange={() => toggleExtra(d.id)}
-                    />
-                    <span>{d.original_filename}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm dark:bg-red-950 dark:text-red-200">
             {error}
           </div>
         )}
 
-        <div className="grid gap-6 md:grid-cols-[220px_1fr]">
-          <aside className="space-y-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Chat sessions</h2>
-            <button
-              type="button"
-              onClick={() => {
-                setSessionId(null);
-              }}
-              className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
-                sessionId === null ? "bg-zinc-200 dark:bg-zinc-800" : "hover:bg-zinc-100 dark:hover:bg-zinc-900"
-              }`}
-            >
-              New thread
-            </button>
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => {
-                  setExtraIds([]);
-                  setSessionId(s.id);
-                }}
-                className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
-                  sessionId === s.id ? "bg-zinc-200 dark:bg-zinc-800" : "hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                }`}
-              >
-                <span className="line-clamp-2">{s.title}</span>
-                <span className="block text-xs text-zinc-500">{new Date(s.created_at).toLocaleString()}</span>
-              </button>
-            ))}
-          </aside>
-
-          <div className="flex min-h-[420px] flex-col rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
-            <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {messages.length === 0 && (
-                <p className="text-sm text-zinc-500">
-                  Ask a question about this document. Replies use RAG + Ollama (first reply can take a minute).
-                </p>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="space-y-4">
+            <section className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-900/40">
+              <h2 className="bg-slate-50 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:bg-zinc-900/80 dark:text-zinc-100">
+                File preview
+              </h2>
+              {previewLoading && <p className="p-4 text-sm text-slate-500">Loading preview…</p>}
+              {previewError && (
+                <p className="p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
               )}
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${
-                    m.role === "user"
-                      ? "ml-auto bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                      : "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                  }`}
-                >
-                  <div className="text-xs opacity-70">{m.role}</div>
-                  <div className="mt-1 whitespace-pre-wrap">{m.content}</div>
+              {!previewLoading && !previewError && previewKind === "pdf" && fileBlobUrl && (
+                <iframe
+                  title="PDF preview"
+                  src={fileBlobUrl}
+                  className="block h-[min(70vh,740px)] w-full bg-zinc-100 dark:bg-zinc-950"
+                />
+              )}
+              {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
+                <pre className="max-h-[min(70vh,740px)] overflow-auto whitespace-pre-wrap break-words p-4 text-xs text-slate-800 dark:text-zinc-200">
+                  {textFilePreview || "(empty file)"}
+                </pre>
+              )}
+              {!previewLoading && !previewError && previewKind === "office" && fileBlobUrl && (
+                <div className="space-y-3 p-4 text-sm text-slate-600 dark:text-zinc-400">
+                  <p>Browsers cannot show Word (.docx) inline here. Open the file in Word or download it.</p>
+                  <button
+                    type="button"
+                    onClick={() => window.open(fileBlobUrl, "_blank", "noopener,noreferrer")}
+                    className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
+                  >
+                    Open / download file
+                  </button>
                 </div>
-              ))}
-            </div>
-            {sessionId && (
-              <div className="border-t border-zinc-200 px-4 py-2 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadBlob(`/export/chat/${sessionId}?format=pdf`, `chat-${sessionId}.pdf`).catch((e) =>
-                      setError(e instanceof Error ? e.message : "Export failed")
-                    )
-                  }
-                  className="mr-2 text-xs text-zinc-600 underline dark:text-zinc-400"
-                >
-                  Export chat PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadBlob(`/export/chat/${sessionId}?format=docx`, `chat-${sessionId}.docx`).catch((e) =>
-                      setError(e instanceof Error ? e.message : "Export failed")
-                    )
-                  }
-                  className="text-xs text-zinc-600 underline dark:text-zinc-400"
-                >
-                  Export chat DOCX
-                </button>
+              )}
+              {!previewLoading && !previewError && previewKind === null && (
+                <p className="p-4 text-sm text-slate-500">No preview for this file type.</p>
+              )}
+            </section>
+
+            {summary && (
+              <div className="rounded-2xl bg-white p-4 text-sm text-slate-800 shadow-sm dark:bg-zinc-900/50 dark:text-zinc-200">
+                <h2 className="font-semibold text-slate-900 dark:text-zinc-100">Summary</h2>
+                <div className="prose prose-sm mt-2 max-w-none whitespace-pre-wrap dark:prose-invert">{summary}</div>
               </div>
             )}
-            <form onSubmit={onSend} className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-              <div className="flex gap-2">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask something about the document…"
-                  rows={2}
-                  className="flex-1 resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                />
-                <button
-                  type="submit"
-                  disabled={sending}
-                  className="self-end rounded-md bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-                >
-                  {sending ? "…" : "Send"}
-                </button>
+
+            {allDocs.length > 0 && (
+              <div className="rounded-2xl bg-slate-100/80 p-4 shadow-sm dark:bg-zinc-900/60">
+                <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">Multi-document context</p>
+                <p className="text-xs text-slate-500">
+                  Include additional uploaded files when starting a new thread only (locked while a saved session is selected).
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {allDocs.map((d) => (
+                    <li key={d.id}>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition hover:bg-slate-200 dark:hover:bg-zinc-800/80">
+                        <input
+                          type="checkbox"
+                          disabled={!!sessionId}
+                          checked={extraIds.includes(d.id)}
+                          onChange={() => toggleExtra(d.id)}
+                          className="rounded"
+                        />
+                        <span>{d.original_filename}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </form>
+            )}
+          </div>
+
+          <div className="rounded-2xl bg-white shadow-sm dark:bg-zinc-900/40">
+            <div className="grid h-full min-h-[760px] gap-4 p-4 xl:grid-cols-[220px_1fr]">
+              <aside className="rounded-xl bg-slate-100/70 p-3 dark:bg-zinc-900/60">
+                <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Chat sessions</h2>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSessionId(null);
+                    }}
+                    className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
+                      sessionId === null
+                        ? "bg-blue-100 font-medium text-blue-800 dark:bg-zinc-800 dark:text-zinc-100"
+                        : "hover:bg-slate-200 dark:hover:bg-zinc-900"
+                    }`}
+                  >
+                    New thread
+                  </button>
+                  {sessions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setExtraIds([]);
+                        setSessionId(s.id);
+                      }}
+                      className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
+                        sessionId === s.id
+                          ? "bg-blue-100 font-medium text-blue-800 dark:bg-zinc-800 dark:text-zinc-100"
+                          : "hover:bg-slate-200 dark:hover:bg-zinc-900"
+                      }`}
+                    >
+                      <span className="line-clamp-2">{s.title}</span>
+                      <span className="mt-1 block text-xs text-slate-500">{new Date(s.created_at).toLocaleString()}</span>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              <div className="flex min-h-[620px] flex-col overflow-hidden rounded-xl bg-white shadow-sm dark:bg-zinc-900/50">
+                <div className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-slate-50/70 to-white p-4 dark:from-zinc-900/60 dark:to-zinc-900/30">
+                  {messages.length === 0 && (
+                    <p className="text-sm text-slate-500">
+                      Ask a question about this document. Replies use RAG + Ollama (first reply can take a minute).
+                    </p>
+                  )}
+                  {messages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                        m.role === "user"
+                          ? "ml-auto rounded-tr-sm bg-blue-600 text-white dark:bg-blue-500"
+                          : "rounded-tl-sm bg-slate-100 text-slate-900 dark:bg-zinc-800 dark:text-zinc-100"
+                      }`}
+                    >
+                      <div className="text-xs opacity-70">{m.role}</div>
+                      <div className="mt-1 whitespace-pre-wrap">{m.content}</div>
+                    </div>
+                  ))}
+                </div>
+                {sessionId && (
+                  <div className="bg-slate-50/80 px-4 py-2 dark:bg-zinc-900/60">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadBlob(`/export/chat/${sessionId}?format=pdf`, `chat-${sessionId}.pdf`).catch((e) =>
+                          setError(e instanceof Error ? e.message : "Export failed")
+                        )
+                      }
+                      className="mr-3 text-xs font-medium text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-800 dark:text-zinc-400"
+                    >
+                      Export chat PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadBlob(`/export/chat/${sessionId}?format=docx`, `chat-${sessionId}.docx`).catch((e) =>
+                          setError(e instanceof Error ? e.message : "Export failed")
+                        )
+                      }
+                      className="text-xs font-medium text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-800 dark:text-zinc-400"
+                    >
+                      Export chat DOCX
+                    </button>
+                  </div>
+                )}
+                <form onSubmit={onSend} className="bg-slate-50/70 p-3 dark:bg-zinc-900/70">
+                  <div className="flex gap-2 rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-blue-300 dark:bg-zinc-950/70 dark:ring-zinc-700 dark:focus-within:ring-blue-500">
+                    <textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Ask something about the document…"
+                      rows={2}
+                      className="flex-1 resize-none rounded-lg bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-0 dark:bg-zinc-950 dark:text-zinc-100"
+                    />
+                    <button
+                      type="submit"
+                      disabled={sending}
+                      className="self-end rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
+                    >
+                      {sending ? "…" : "Send"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
         </div>
       </div>
