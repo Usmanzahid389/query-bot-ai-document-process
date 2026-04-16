@@ -261,95 +261,99 @@ export default function DocumentChatPage() {
         )}
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-4">
-            <section className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-900/40">
-              <h2 className="bg-slate-50 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:bg-zinc-900/80 dark:text-zinc-100">
+          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-gradient-to-br from-slate-100/70 via-slate-50 to-blue-50/60 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
+            <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 via-white to-blue-50/60 shadow-sm dark:bg-zinc-900/40">
+              <h2 className="bg-white/80 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:bg-zinc-900/80 dark:text-zinc-100">
                 File preview
               </h2>
-              {previewLoading && <p className="p-4 text-sm text-slate-500">Loading preview…</p>}
-              {previewError && (
-                <p className="p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
-              )}
-              {!previewLoading && !previewError && previewKind === "pdf" && fileBlobUrl && (
-                <iframe
-                  title="PDF preview"
-                  src={fileBlobUrl}
-                  className="block h-[min(70vh,740px)] w-full bg-zinc-100 dark:bg-zinc-950"
-                />
-              )}
-              {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
-                <pre className="max-h-[min(70vh,740px)] overflow-auto whitespace-pre-wrap break-words p-4 text-xs text-slate-800 dark:text-zinc-200">
-                  {textFilePreview || "(empty file)"}
-                </pre>
-              )}
-              {!previewLoading && !previewError && previewKind === "office" && fileBlobUrl && (
-                <div className="space-y-3 p-4 text-sm text-slate-600 dark:text-zinc-400">
-                  <p>Browsers cannot show Word (.docx) inline here. Open the file in Word or download it.</p>
-                  <button
-                    type="button"
-                    onClick={() => window.open(fileBlobUrl, "_blank", "noopener,noreferrer")}
-                    className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
-                  >
-                    Open / download file
-                  </button>
-                </div>
-              )}
-              {!previewLoading && !previewError && previewKind === null && (
-                <p className="p-4 text-sm text-slate-500">No preview for this file type.</p>
-              )}
+              <div className="flex-1 overflow-y-auto">
+                {previewLoading && <p className="bg-white/70 p-4 text-sm text-slate-500">Loading preview…</p>}
+                {previewError && (
+                  <p className="bg-red-50/80 p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
+                )}
+                {!previewLoading && !previewError && previewKind === "pdf" && fileBlobUrl && (
+                  <iframe
+                    title="PDF preview"
+                    src={fileBlobUrl}
+                    className="block h-full w-full bg-white"
+                  />
+                )}
+                {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
+                  <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-white/80 p-4 text-xs text-slate-800 dark:text-zinc-200">
+                    {textFilePreview || "(empty file)"}
+                  </pre>
+                )}
+                {!previewLoading && !previewError && previewKind === "office" && fileBlobUrl && (
+                  <div className="space-y-3 bg-white/70 p-4 text-sm text-slate-600 dark:text-zinc-400">
+                    <p>Browsers cannot show Word (.docx) inline here. Open the file in Word or download it.</p>
+                    <button
+                      type="button"
+                      onClick={() => window.open(fileBlobUrl, "_blank", "noopener,noreferrer")}
+                      className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
+                    >
+                      Open / download file
+                    </button>
+                  </div>
+                )}
+                {!previewLoading && !previewError && previewKind === null && (
+                  <p className="bg-white/70 p-4 text-sm text-slate-500">No preview for this file type.</p>
+                )}
+              </div>
             </section>
 
-            {summary && (
-              <div className="rounded-2xl bg-white p-4 text-sm text-slate-800 shadow-sm dark:bg-zinc-900/50 dark:text-zinc-200">
-                <h2 className="font-semibold text-slate-900 dark:text-zinc-100">Summary</h2>
-                <div className="prose prose-sm mt-2 max-w-none whitespace-pre-wrap dark:prose-invert">{summary}</div>
-              </div>
-            )}
+            <div className="mt-4 space-y-4 overflow-y-auto pr-1">
+              {summary && (
+                <div className="rounded-2xl bg-white p-4 text-sm text-slate-800 shadow-sm dark:bg-zinc-900/50 dark:text-zinc-200">
+                  <h2 className="font-semibold text-slate-900 dark:text-zinc-100">Summary</h2>
+                  <div className="prose prose-sm mt-2 max-w-none whitespace-pre-wrap dark:prose-invert">{summary}</div>
+                </div>
+              )}
 
-            {allDocs.length > 0 && (
-              <div className="rounded-2xl bg-slate-100/80 p-4 shadow-sm dark:bg-zinc-900/60">
-                <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">Multi-document context</p>
-                <p className="text-xs text-slate-500">
-                  Include additional uploaded files when starting a new thread only (locked while a saved session is selected).
-                </p>
-                <ul className="mt-3 space-y-2">
-                  {allDocs.map((d) => (
-                    <li key={d.id}>
-                      <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition hover:bg-slate-200 dark:hover:bg-zinc-800/80">
-                        <input
-                          type="checkbox"
-                          disabled={!!sessionId}
-                          checked={extraIds.includes(d.id)}
-                          onChange={() => toggleExtra(d.id)}
-                          className="rounded"
-                        />
-                        <span>{d.original_filename}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+              {allDocs.length > 0 && (
+                <div className="rounded-2xl bg-slate-100/80 p-4 shadow-sm dark:bg-zinc-900/60">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">Multi-document context</p>
+                  <p className="text-xs text-slate-500">
+                    Include additional uploaded files when starting a new thread only (locked while a saved session is selected).
+                  </p>
+                  <ul className="mt-3 space-y-2">
+                    {allDocs.map((d) => (
+                      <li key={d.id}>
+                        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition hover:bg-slate-200 dark:hover:bg-zinc-800/80">
+                          <input
+                            type="checkbox"
+                            disabled={!!sessionId}
+                            checked={extraIds.includes(d.id)}
+                            onChange={() => toggleExtra(d.id)}
+                            className="rounded"
+                          />
+                          <span>{d.original_filename}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="rounded-2xl bg-white shadow-sm dark:bg-zinc-900/40">
-            <div className="grid h-full min-h-[760px] gap-4 p-4 xl:grid-cols-[220px_1fr]">
-              <aside className="rounded-xl bg-slate-100/70 p-3 dark:bg-zinc-900/60">
+          <div className="order-1 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-gradient-to-b from-blue-50 via-white to-slate-50 p-3 shadow-[0_14px_34px_rgba(37,99,235,0.14)] dark:bg-zinc-900/40 lg:order-1">
+            <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[220px_1fr]">
+              <aside className="flex h-full min-h-0 flex-col rounded-xl bg-blue-100/70 p-3 shadow-sm dark:bg-zinc-900/60">
                 <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Chat sessions</h2>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSessionId(null);
-                    }}
-                    className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
-                      sessionId === null
-                        ? "bg-blue-100 font-medium text-blue-800 dark:bg-zinc-800 dark:text-zinc-100"
-                        : "hover:bg-slate-200 dark:hover:bg-zinc-900"
-                    }`}
-                  >
-                    New thread
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSessionId(null);
+                  }}
+                  className={`mb-2 w-full rounded-lg px-2 py-2 text-left text-sm transition ${
+                    sessionId === null
+                      ? "bg-blue-100 font-medium text-blue-800 dark:bg-zinc-800 dark:text-zinc-100"
+                      : "hover:bg-slate-200 dark:hover:bg-zinc-900"
+                  }`}
+                >
+                  New thread
+                </button>
+                <div className="flex-1 space-y-2 overflow-y-auto pr-1">
                   {sessions.map((s) => (
                     <button
                       key={s.id}
@@ -371,8 +375,8 @@ export default function DocumentChatPage() {
                 </div>
               </aside>
 
-              <div className="flex min-h-[620px] flex-col overflow-hidden rounded-xl bg-white shadow-sm dark:bg-zinc-900/50">
-                <div className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-slate-50/70 to-white p-4 dark:from-zinc-900/60 dark:to-zinc-900/30">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-white shadow-[0_10px_24px_rgba(30,64,175,0.12)] dark:bg-zinc-900/50">
+                <div className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-blue-50/60 via-white to-slate-50/70 p-4 dark:from-zinc-900/60 dark:to-zinc-900/30">
                   {messages.length === 0 && (
                     <p className="text-sm text-slate-500">
                       Ask a question about this document. Replies use RAG + Ollama (first reply can take a minute).
