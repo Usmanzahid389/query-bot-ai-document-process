@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     upload_dir: Path = Path(__file__).resolve().parent.parent.parent / "uploads"
     max_upload_bytes: int = 10 * 1024 * 1024
 
+    # PDF text extraction: opendataloader (layout-aware, needs Java) | pymupdf | auto (try OpenDataLoader, then PyMuPDF)
+    pdf_parser: str = "auto"
+
     # RAG: Chroma + Hugging Face embeddings + OpenAI-compatible LLM (OpenRouter, Groq, etc.)
     chroma_dir: Path = Path(__file__).resolve().parent.parent.parent / "chroma_db"
     chroma_collection: str = "querybot_documents"

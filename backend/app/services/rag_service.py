@@ -131,7 +131,7 @@ def _llm() -> ChatOpenAI:
         base_url=settings.llm_base_url,
         model=settings.llm_model,
         api_key=settings.llm_api_key,
-        temperature=0.1,
+        temperature=0.15,
         timeout=settings.llm_timeout_seconds,
     )
 
@@ -198,8 +198,8 @@ def answer_question(
         chunks = _retrieve(user_id, ids, question, settings.rag_top_k)
     if not chunks:
         return (
-            "No relevant text was found in the indexed documents. "
-            "The file may be empty, image-only (scanned PDF), or not yet indexed."
+            "I couldn’t find anything relevant in your uploaded document for this question. "
+            "The file might be empty, mostly images (scanned PDF without OCR), or the topic may not appear in the text."
         )
 
     context = _format_context(chunks)
@@ -207,9 +207,13 @@ def answer_question(
         [
             (
                 "human",
-                "You are a careful assistant. Answer ONLY using the CONTEXT below. "
-                "If the answer is not in the context, say you cannot find it in the document. "
-                "When you use information, cite the bracket number [n] from the context.\n\n"
+                "You are a helpful assistant answering from the user’s uploaded document.\n\n"
+                "Rules:\n"
+                "- Use ONLY the CONTEXT below. Do not invent facts or use outside knowledge.\n"
+                "- If the answer is not clearly supported by the context, say you can’t find it in the document.\n"
+                "- Write in a clear, friendly tone. Short paragraphs or bullet points are fine when they help readability.\n"
+                "- When you use specific information, cite the chunk number from the context in brackets, e.g. [1] or [2].\n"
+                "- If the context only partially answers the question, say what you can confirm and what is missing.\n\n"
                 "CONTEXT:\n{context}\n\nQUESTION:\n{question}",
             ),
         ]
@@ -226,7 +230,7 @@ def summarize_document_rag(
     extracted_text: str,
 ) -> str:
     q = (
-        "Provide a structured summary: overview, key points, and takeaways. "
+        "Provide a structured summary with: brief overview, key points, and practical takeaways. "
         "Use only the provided context."
     )
     chunks = _retrieve(user_id, [document_id], q, settings.rag_summary_top_k)
@@ -241,7 +245,9 @@ def summarize_document_rag(
         [
             (
                 "human",
-                "Summarize ONLY from the CONTEXT. If context is insufficient, say so.\n\n"
+                "Summarize ONLY from the CONTEXT below. Do not add outside facts. "
+                "If the context is too thin to summarize meaningfully, say so briefly.\n"
+                "Use clear, friendly language and short sections where helpful.\n\n"
                 "Document title: {title}\n\nCONTEXT:\n{context}\n\nWrite the summary.",
             ),
         ]
