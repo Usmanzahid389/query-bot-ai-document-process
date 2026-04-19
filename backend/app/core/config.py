@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     chroma_dir: Path = Path(__file__).resolve().parent.parent.parent / "chroma_db"
     chroma_collection: str = "querybot_documents"
     embedding_model_id: str = "sentence-transformers/all-MiniLM-L6-v2"
-    llm_base_url: str = "https://openrouter.ai/api/v1"
-    llm_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "llama-3.3-70b-versatile"
     llm_api_key: str = ""
     llm_timeout_seconds: float = 180.0
     rag_chunk_size: int = 900

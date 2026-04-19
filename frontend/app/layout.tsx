@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-zinc-50 font-sans antialiased dark:bg-zinc-950`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-slate-100 font-sans antialiased dark:bg-zinc-950`}
       >
         <Nav />
         <main className="w-full pt-0">{children}</main>
