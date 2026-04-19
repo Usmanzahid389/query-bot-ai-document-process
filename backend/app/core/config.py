@@ -29,12 +29,14 @@ class Settings(BaseSettings):
     # Chunking: slightly smaller chunks + higher overlap help headings stay with the following list.
     rag_chunk_size: int = 800
     rag_chunk_overlap: int = 160
-    # MMR: fetch many candidates from Chroma, then pick rag_top_k with diverse embeddings (no cross-encoder).
-    rag_fetch_k: int = 28
-    rag_top_k: int = 12
+    # Q&A retrieval: similarity top-k keeps adjacent chunks from the same section (better for “list all requirements”).
+    # Summaries still use MMR when rag_mmr_enabled (below).
+    rag_qa_use_mmr: bool = False
+    rag_fetch_k: int = 44
+    rag_top_k: int = 22
     rag_mmr_enabled: bool = True
-    # 1.0 = most like plain top-k similarity; lower = more diversity between chunks.
-    rag_mmr_lambda: float = 0.55
+    # 1.0 ≈ pure relevance; used for summary retrieval when MMR is on.
+    rag_mmr_lambda: float = 0.82
     rag_summary_fetch_k: int | None = None  # None → use rag_fetch_k
     rag_summary_top_k: int = 10
 

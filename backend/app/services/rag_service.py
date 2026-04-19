@@ -123,15 +123,18 @@ def _retrieve_context(
     *,
     final_k: int,
     fetch_k: int,
+    use_mmr: bool | None = None,
 ) -> list[LCDocument]:
     """
-    Retrieve chunks for the LLM: MMR over a larger candidate pool (same embedding model, no cross-encoder)
-    so overlapping redundant hits do not crowd out other sections (e.g. different headings / lists).
+    Retrieve chunks for the LLM.
+    - MMR: diverse chunks (good for summaries / comparing distant ideas).
+    - Similarity only: top final_k by embedding match (better for exhaustive lists in one section).
     """
     where = _build_where(user_id, document_ids)
     fk = max(int(fetch_k), int(final_k))
     vs = _get_vectorstore()
-    if settings.rag_mmr_enabled and fk > final_k:
+    want_mmr = settings.rag_mmr_enabled if use_mmr is None else use_mmr
+    if want_mmr and fk > final_k:
         try:
             return vs.max_marginal_relevance_search(
                 query,
@@ -225,6 +228,7 @@ def answer_question(
         question,
         final_k=settings.rag_top_k,
         fetch_k=settings.rag_fetch_k,
+        use_mmr=settings.rag_qa_use_mmr,
     )
     if not chunks:
         for d in docs:
@@ -240,6 +244,7 @@ def answer_question(
             question,
             final_k=settings.rag_top_k,
             fetch_k=settings.rag_fetch_k,
+            use_mmr=settings.rag_qa_use_mmr,
         )
     if not chunks:
         return (
@@ -258,6 +263,16 @@ def answer_question(
                 "- If the answer is not clearly supported by the context, say you can’t find it in the document.\n"
                 "- For lists (e.g. names, hooks, steps), include every distinct item that appears in the context; "
                 "do not invent items. If the context may be incomplete, say so.\n"
+                "- If the question asks for requirements, sections, categories, or “all” items of a type, include "
+                "every numbered or clearly titled subsection that appears in the context (not only the first hit).\n"
+                "- Hierarchy: when the question names a heading or topic (e.g. “DOMAIN REQUIREMENTS”), treat every "
+                "subsection in the context that belongs to that topic as part of the answer—including peer items "
+                "such as “AI & Machine Learning Requirements”, “User Experience … Requirements”, or “Scalability … "
+                "Requirements” if they appear in the same chapter or numbered list. Do not dismiss such chunks as "
+                "“not domain requirements” after citing them; either list them under the requested topic or explain "
+                "explicitly (with quotes from context) why the document separates them.\n"
+                "- Do not contradict yourself: if you cite a chunk for a requirement-style title, include that "
+                "title in your enumerated answer.\n"
                 "- Write in a clear, friendly tone. Short paragraphs or bullet points are fine when they help readability.\n"
                 "- When you use specific information, cite the chunk number from the context in brackets, e.g. [1] or [2].\n"
                 "- If the context only partially answers the question, say what you can confirm and what is missing.\n\n"

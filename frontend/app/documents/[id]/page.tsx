@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PdfLightPreview, PdfPreviewSkeleton } from "@/components/PdfLightPreview";
 import { RequireAuth } from "@/components/RequireAuth";
 import {
   api,
@@ -266,17 +267,16 @@ export default function DocumentChatPage() {
               <h2 className="bg-white/80 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:bg-zinc-900/80 dark:text-zinc-100">
                 File preview
               </h2>
-              <div className="flex-1 overflow-y-auto">
-                {previewLoading && <p className="bg-white/70 p-4 text-sm text-slate-500">Loading preview…</p>}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {previewLoading && doc?.mime_type?.toLowerCase().includes("pdf") && <PdfPreviewSkeleton />}
+                {previewLoading && !doc?.mime_type?.toLowerCase().includes("pdf") && (
+                  <p className="bg-white/70 p-4 text-sm text-slate-500">Loading preview…</p>
+                )}
                 {previewError && (
                   <p className="bg-red-50/80 p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
                 )}
                 {!previewLoading && !previewError && previewKind === "pdf" && fileBlobUrl && (
-                  <iframe
-                    title="PDF preview"
-                    src={fileBlobUrl}
-                    className="block h-full w-full bg-white"
-                  />
+                  <PdfLightPreview fileUrl={fileBlobUrl} />
                 )}
                 {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
                   <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-white/80 p-4 text-xs text-slate-800 dark:text-zinc-200">
