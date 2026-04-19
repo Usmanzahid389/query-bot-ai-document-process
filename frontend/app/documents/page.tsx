@@ -16,7 +16,9 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const profileRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -35,25 +37,20 @@ export default function DocumentsPage() {
   useEffect(() => {
     let mounted = true;
     api<User>("/auth/me")
-      .then((u) => {
-        if (mounted) setMe(u);
-      })
-      .catch(() => {
-        if (mounted) setMe(null);
-      });
-    return () => {
-      mounted = false;
-    };
+      .then((u) => { if (mounted) setMe(u); })
+      .catch(() => { if (mounted) setMe(null); });
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
     function onPointerDown(e: MouseEvent) {
-      if (!searchWrapRef.current) return;
-      if (!searchWrapRef.current.contains(e.target as Node)) {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) {
         setShowSearchDropdown(false);
       }
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
+      }
     }
-
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, []);
@@ -90,10 +87,9 @@ export default function DocumentsPage() {
     return ext ? ext.toUpperCase() : "FILE";
   }
 
-  function displayNameFromEmail(email: string | undefined): string {
-    if (!email) return "QueryBot User";
+  function displayName(email: string | undefined): string {
+    if (!email) return "User";
     const local = email.split("@")[0] ?? "user";
-    if (!local) return "QueryBot User";
     return local.charAt(0).toUpperCase() + local.slice(1);
   }
 
@@ -113,245 +109,284 @@ export default function DocumentsPage() {
   function renderHighlightedName(name: string, query: string) {
     const q = query.trim();
     if (!q) return name;
-    const lowerName = name.toLowerCase();
-    const lowerQ = q.toLowerCase();
-    const idx = lowerName.indexOf(lowerQ);
+    const idx = name.toLowerCase().indexOf(q.toLowerCase());
     if (idx === -1) return name;
-
-    const start = name.slice(0, idx);
-    const match = name.slice(idx, idx + q.length);
-    const end = name.slice(idx + q.length);
-
     return (
       <>
-        {start}
-        <mark className="rounded bg-blue-100 px-0.5 text-slate-900">{match}</mark>
-        {end}
+        {name.slice(0, idx)}
+        <mark className="rounded bg-amber-100 px-0.5 text-slate-900">{name.slice(idx, idx + q.length)}</mark>
+        {name.slice(idx + q.length)}
       </>
     );
   }
 
   return (
     <RequireAuth>
-      <div className="mx-auto grid w-full max-w-[1600px] gap-6 pb-12 pl-0 pr-4 pt-0 sm:pl-0 sm:pr-6 lg:min-h-[calc(100vh-84px)] lg:grid-cols-[20%_80%] lg:gap-0 lg:pl-0 lg:pr-8 lg:pb-0 lg:pt-0">
-        <aside className="flex h-fit flex-col rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm lg:sticky lg:top-[64px] lg:h-[calc(100vh-64px)] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:border-r lg:px-6 lg:shadow-none">
-          <div className="space-y-1">
+      <div className="flex min-h-screen bg-slate-50">
+        {/* ── Sidebar ── */}
+        <aside className="sticky top-0 flex h-screen w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white">
+          {/* Nav links */}
+          <nav className="flex-1 space-y-1 px-3 py-4">
             <Link
               href="/"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+              className="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
             >
-              <span>◻</span>
-              <span>Dashboard</span>
+              <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              </svg>
+              Home
             </Link>
             <Link
               href="/documents"
-              className="flex items-center gap-3 rounded-xl bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700"
+              className="flex items-center gap-3 rounded-xl bg-[#0C2C55]/8 px-4 py-2.5 text-sm font-semibold text-[#0C2C55]"
             >
-              <span>▣</span>
-              <span>Documents</span>
+              <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              Documents
             </Link>
-            <Link
-              href="/compare"
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-            >
-              <span>◫</span>
-              <span>Compare</span>
-            </Link>
-          </div>
+          </nav>
 
-          <div className="mt-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
-                {displayNameFromEmail(me?.email).charAt(0)}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">{displayNameFromEmail(me?.email)}</p>
-                <p className="truncate text-xs text-slate-500">{me?.email ?? "Signed in"}</p>
-              </div>
-            </div>
+          {/* Profile card */}
+          <div ref={profileRef} className="relative border-t border-slate-100 px-3 py-4">
             <button
               type="button"
-              onClick={logout}
-              className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              onClick={() => setShowProfileMenu((v) => !v)}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-50"
             >
-              Log out
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-xs font-bold text-white shadow-sm">
+                {displayName(me?.email).charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-900">{displayName(me?.email)}</p>
+                <p className="truncate text-xs text-slate-400">{me?.email ?? "Signed in"}</p>
+              </div>
+              <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 5v.01M12 12v.01M12 19v.01" strokeLinecap="round" />
+              </svg>
             </button>
+
+            {showProfileMenu && (
+              <div className="absolute bottom-full left-3 right-3 mb-2 rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                <button type="button" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50">
+                  <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                  Profile
+                </button>
+                <button type="button" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50">
+                  <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg>
+                  Settings
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+                <button type="button" onClick={logout} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50">
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                  Log out
+                </button>
+              </div>
+            )}
           </div>
         </aside>
 
-        <div className="space-y-8 px-4 py-6 lg:px-10 lg:py-8">
-          <section className="space-y-2">
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Documents Library</h1>
-            <p className="text-base text-slate-600">
-              Manage your knowledge base and interact with your AI assistant.
-            </p>
-          </section>
+        {/* ── Main content ── */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 lg:px-10">
+            <section className="space-y-1">
+              <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Documents Library</h1>
+              <p className="text-sm text-slate-500">
+                Manage your knowledge base and interact with your AI assistant.
+              </p>
+            </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <label htmlFor="doc-search" className="mb-2 block text-sm font-semibold text-slate-700">
-              Search PDFs and documents
-            </label>
-            <div ref={searchWrapRef} className="relative">
-              <input
-                id="doc-search"
-                type="text"
-                value={search}
-                onFocus={() => setShowSearchDropdown(true)}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setShowSearchDropdown(true);
-                }}
-                placeholder="Search by file name..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100"
-              />
-              {showSearchResults && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearch("");
-                    setShowSearchDropdown(false);
+            {/* Search */}
+            <section>
+              <div ref={searchWrapRef} className="relative">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
+                  <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="11" cy="11" r="8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={search}
+                  onFocus={() => setShowSearchDropdown(true)}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setShowSearchDropdown(true);
                   }}
-                  aria-label="Clear search"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
-                >
-                  ✕
-                </button>
-              )}
+                  placeholder="Search documents..."
+                  className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-20 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 transition-colors focus:border-slate-300 focus:outline-none"
+                />
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 hidden rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline-flex">⌘ K</span>
 
-              {showSearchDropdown && showSearchResults && (
-                <div className="absolute left-0 right-0 z-30 mt-2 origin-top rounded-2xl border border-slate-200 bg-white p-2 shadow-xl transition-all duration-200 ease-out">
-                  <div className="mb-1 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Search Results
-                  </div>
+                {showSearchResults && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearch(""); setShowSearchDropdown(false); }}
+                    aria-label="Clear search"
+                    className="absolute right-12 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 sm:right-16"
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
 
-                  {filteredFiles.length === 0 ? (
-                    <div className="rounded-xl px-3 py-3 text-sm text-slate-500">No files found</div>
-                  ) : (
-                    <ul className="max-h-[360px] space-y-1 overflow-y-auto pr-1">
-                      {searchResults.map((d) => (
-                        <li key={`dropdown-${d.id}`}>
-                          <div className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 transition hover:bg-slate-50">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-base" aria-hidden>
-                                  📄
-                                </span>
-                                <Link
-                                  href={`/documents/${d.id}`}
-                                  onClick={() => setShowSearchDropdown(false)}
-                                  className="truncate text-sm font-semibold text-slate-900 hover:underline"
-                                >
-                                  {renderHighlightedName(d.original_filename, searchQuery)}
-                                </Link>
-                              </div>
-                              <p className="mt-0.5 text-xs text-slate-500">
-                                {(d.size_bytes / 1024).toFixed(1)} KB · {new Date(d.created_at).toLocaleDateString()}
-                              </p>
-                            </div>
+                {/* Search dropdown */}
+                {showSearchDropdown && showSearchResults && (
+                  <div className="absolute left-0 right-0 z-30 mt-2 rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Results</span>
+                      <span className="rounded-full bg-[#0C2C55]/10 px-2 py-0.5 text-[10px] font-bold text-[#0C2C55]">
+                        {filteredFiles.length} found
+                      </span>
+                    </div>
 
+                    {filteredFiles.length === 0 ? (
+                      <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                        <svg className="h-8 w-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                          <circle cx="11" cy="11" r="8" />
+                          <path strokeLinecap="round" d="M21 21l-4.35-4.35" />
+                        </svg>
+                        <p className="text-sm font-medium text-slate-400">No files match your search</p>
+                        <p className="text-xs text-slate-300">Try a different keyword</p>
+                      </div>
+                    ) : (
+                      <ul className="max-h-[340px] divide-y divide-slate-50 overflow-y-auto p-1.5">
+                        {searchResults.map((d) => (
+                          <li key={`dropdown-${d.id}`}>
                             <Link
                               href={`/documents/${d.id}`}
                               onClick={() => setShowSearchDropdown(false)}
-                              className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-blue-600 hover:text-white"
+                              className="group/item flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-slate-50"
                             >
-                              Open chat
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0C2C55] to-[#10386a]">
+                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-slate-900">
+                                  {renderHighlightedName(d.original_filename, searchQuery)}
+                                </p>
+                                <p className="text-xs text-slate-400">
+                                  {(d.size_bytes / 1024).toFixed(1)} KB · {new Date(d.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                              <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-500">
+                                {extensionOf(d.original_filename)}
+                              </span>
+                              <span className="hidden rounded-lg bg-[#0C2C55] px-2.5 py-1 text-[10px] font-bold text-white opacity-0 transition group-hover/item:inline-flex group-hover/item:opacity-100">
+                                Open
+                              </span>
                             </Link>
-                          </div>
-                        </li>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Upload */}
+            <section
+              onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+              onDragLeave={() => setDrag(false)}
+              onDrop={onDrop}
+              className={`rounded-2xl border-2 border-dashed p-8 text-center transition-all ${
+                drag ? "border-[#0C2C55] bg-[#0C2C55]/5" : "border-slate-200 bg-white"
+              }`}
+            >
+              <label className="flex cursor-pointer flex-col items-center gap-2">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                  <svg className="h-6 w-6 text-[#0C2C55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                </div>
+                <span className="text-sm font-semibold text-slate-900">
+                  {uploading ? "Uploading..." : "Upload Documents"}
+                </span>
+                <span className="text-xs text-slate-400">Drag & drop or click · PDF, DOCX, TXT</span>
+                <input type="file" accept=".pdf,.docx,.txt" className="hidden" disabled={uploading} onChange={onFile} />
+              </label>
+            </section>
+
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {error}
+              </div>
+            )}
+
+            {/* Files Table */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-900">All Files</h2>
+                <p className="text-xs font-medium text-slate-400">{docs.length} document{docs.length !== 1 ? "s" : ""}</p>
+              </div>
+
+              {docs.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+                  <svg className="mx-auto mb-3 h-10 w-10 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm font-medium text-slate-400">No documents yet</p>
+                  <p className="text-xs text-slate-300">Upload a file to get started</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gradient-to-r from-[#0C2C55] to-[#10386a]">
+                        <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-white/90">File Name</th>
+                        <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-white/90">Type</th>
+                        <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-white/90">Size</th>
+                        <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-white/90">Uploaded</th>
+                        <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-white/90">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {docs.map((d, i) => (
+                        <tr key={d.id} className={`transition-colors hover:bg-[#0C2C55]/[0.03] ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0C2C55] to-[#10386a]">
+                                <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <Link href={`/documents/${d.id}`} className="truncate text-sm font-semibold text-slate-900 hover:text-[#0C2C55] hover:underline">
+                                {d.original_filename}
+                              </Link>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="inline-flex rounded-md bg-[#0C2C55]/10 px-2 py-0.5 text-[10px] font-bold text-[#0C2C55]">
+                              {extensionOf(d.original_filename)}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-sm text-slate-500">{(d.size_bytes / 1024).toFixed(1)} KB</td>
+                          <td className="px-5 py-3.5 text-sm text-slate-400">{new Date(d.created_at).toLocaleDateString()}</td>
+                          <td className="px-5 py-3.5 text-right">
+                            <Link
+                              href={`/documents/${d.id}`}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C2C55] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#10386a] hover:shadow-md"
+                            >
+                              Open
+                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </Link>
+                          </td>
+                        </tr>
                       ))}
-                    </ul>
-                  )}
+                    </tbody>
+                  </table>
                 </div>
               )}
-            </div>
-          </section>
-
-          <section
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDrag(true);
-            }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={onDrop}
-            className={`rounded-3xl border-2 border-dashed p-10 text-center transition-all ${
-              drag
-                ? "border-blue-500 bg-blue-50"
-                : "border-slate-300 bg-gradient-to-b from-slate-100 to-white"
-            }`}
-          >
-            <label className="flex cursor-pointer flex-col items-center gap-3">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow">
-                <span className="text-2xl">↑</span>
-              </div>
-              <span className="text-base font-semibold text-slate-900">
-                {uploading ? "Uploading..." : "Upload New Documents"}
-              </span>
-              <span className="text-sm text-slate-600">Drag and drop your files here or click to browse</span>
-              <input
-                type="file"
-                accept=".pdf,.docx,.txt"
-                className="hidden"
-                disabled={uploading}
-                onChange={onFile}
-              />
-              <span className="rounded-full bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700">
-                {uploading ? "Please wait..." : "Upload File"}
-              </span>
-              <span className="text-xs text-slate-500">Supported: .pdf, .docx, .txt</span>
-            </label>
-          </section>
-
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-              {error}
-            </div>
-          )}
-
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">All Files</h2>
-              <p className="text-sm font-medium text-slate-500">Last uploaded first</p>
-            </div>
-
-            {docs.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-                No documents yet.
-              </div>
-            ) : (
-              <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {docs.map((d) => (
-                  <li
-                    key={d.id}
-                    className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                  >
-                    <div className="mb-4 flex items-start justify-between">
-                      <div className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
-                        {extensionOf(d.original_filename)}
-                      </div>
-                      <span className="text-xs text-slate-400">{new Date(d.created_at).toLocaleDateString()}</span>
-                    </div>
-
-                    <Link
-                      href={`/documents/${d.id}`}
-                      className="line-clamp-1 text-lg font-bold text-slate-900 underline-offset-4 hover:underline"
-                    >
-                      {d.original_filename}
-                    </Link>
-
-                    <p className="mt-2 text-sm text-slate-500">{(d.size_bytes / 1024).toFixed(1)} KB</p>
-
-                    <Link
-                      href={`/documents/${d.id}`}
-                      className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition group-hover:bg-blue-600 group-hover:text-white"
-                    >
-                      Open chat
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
+            </section>
+          </div>
+        </main>
       </div>
     </RequireAuth>
   );

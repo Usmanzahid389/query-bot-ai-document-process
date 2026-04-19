@@ -204,8 +204,8 @@ export default function DocumentChatPage() {
 
   return (
     <RequireAuth>
-      <div className="space-y-5 rounded-3xl bg-gradient-to-br from-slate-50 via-white to-blue-50/40 p-4 shadow-sm sm:p-6 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
-        <div className="flex flex-wrap items-start justify-between gap-4 rounded-3xl bg-gradient-to-r from-white via-slate-50 to-blue-50 p-5 shadow-md shadow-slate-200/60 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800">
+      <div className="space-y-5 rounded-3xl bg-slate-100 p-4 sm:p-6 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
+        <div className="flex flex-wrap items-start justify-between gap-4 rounded-3xl bg-white p-5 shadow-md shadow-slate-200/60 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800">
           <div className="min-w-0 flex-1">
             <button
               type="button"
@@ -237,7 +237,7 @@ export default function DocumentChatPage() {
                   setError(e instanceof Error ? e.message : "Export failed")
                 )
               }
-              className="rounded-xl bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-200 dark:bg-blue-600/30 dark:text-blue-200"
+              className="rounded-xl bg-[#0C2C55]/10 px-4 py-2 text-sm font-semibold text-[#0C2C55] transition hover:bg-[#0C2C55]/15 dark:bg-[#0C2C55]/30 dark:text-slate-200"
             >
               Export summary PDF
             </button>
@@ -248,7 +248,7 @@ export default function DocumentChatPage() {
                   setError(e instanceof Error ? e.message : "Export failed")
                 )
               }
-              className="rounded-xl bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-200 dark:bg-blue-600/30 dark:text-blue-200"
+              className="rounded-xl bg-[#0C2C55]/10 px-4 py-2 text-sm font-semibold text-[#0C2C55] transition hover:bg-[#0C2C55]/15 dark:bg-[#0C2C55]/30 dark:text-slate-200"
             >
               Export summary DOCX
             </button>
@@ -262,8 +262,8 @@ export default function DocumentChatPage() {
         )}
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-gradient-to-br from-slate-100/70 via-slate-50 to-blue-50/60 p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
-            <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 via-white to-blue-50/60 shadow-sm dark:bg-zinc-900/40">
+          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
+            <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-900/40">
               <h2 className="bg-white/80 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:bg-zinc-900/80 dark:text-zinc-100">
                 File preview
               </h2>
@@ -289,7 +289,7 @@ export default function DocumentChatPage() {
                     <button
                       type="button"
                       onClick={() => window.open(fileBlobUrl, "_blank", "noopener,noreferrer")}
-                      className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
+                      className="rounded-full bg-[#0C2C55] px-4 py-2 text-sm text-white transition hover:bg-[#10386a] dark:bg-[#0C2C55] dark:hover:bg-[#10386a]"
                     >
                       Open / download file
                     </button>
@@ -336,9 +336,9 @@ export default function DocumentChatPage() {
             </div>
           </div>
 
-          <div className="order-1 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-gradient-to-b from-blue-50 via-white to-slate-50 p-3 shadow-[0_14px_34px_rgba(37,99,235,0.14)] dark:bg-zinc-900/40 lg:order-1">
+          <div className="order-1 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-white p-3 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1">
             <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[220px_1fr]">
-              <aside className="flex h-full min-h-0 flex-col rounded-xl bg-blue-100/70 p-3 shadow-sm dark:bg-zinc-900/60">
+              <aside className="flex h-full min-h-0 flex-col rounded-xl bg-white p-3 shadow-sm dark:bg-zinc-900/60">
                 <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Chat sessions</h2>
                 <button
                   type="button"
@@ -347,7 +347,7 @@ export default function DocumentChatPage() {
                   }}
                   className={`mb-2 w-full rounded-lg px-2 py-2 text-left text-sm transition ${
                     sessionId === null
-                      ? "bg-blue-100 font-medium text-blue-800 dark:bg-zinc-800 dark:text-zinc-100"
+                      ? "bg-[#0C2C55]/10 font-medium text-[#0C2C55] dark:bg-zinc-800 dark:text-zinc-100"
                       : "hover:bg-slate-200 dark:hover:bg-zinc-900"
                   }`}
                 >
@@ -364,7 +364,7 @@ export default function DocumentChatPage() {
                       }}
                       className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
                         sessionId === s.id
-                          ? "bg-blue-100 font-medium text-blue-800 dark:bg-zinc-800 dark:text-zinc-100"
+                          ? "bg-[#0C2C55]/10 font-medium text-[#0C2C55] dark:bg-zinc-800 dark:text-zinc-100"
                           : "hover:bg-slate-200 dark:hover:bg-zinc-900"
                       }`}
                     >
@@ -375,8 +375,8 @@ export default function DocumentChatPage() {
                 </div>
               </aside>
 
-              <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-white shadow-[0_10px_24px_rgba(30,64,175,0.12)] dark:bg-zinc-900/50">
-                <div className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-blue-50/60 via-white to-slate-50/70 p-4 dark:from-zinc-900/60 dark:to-zinc-900/30">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-white shadow-[0_10px_24px_rgba(12,44,85,0.14)] dark:bg-zinc-900/50">
+                <div className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-[#0C2C55]/[0.06] via-white to-slate-50/70 p-4 dark:from-zinc-900/60 dark:to-zinc-900/30">
                   {messages.length === 0 && (
                     <p className="text-sm text-slate-500">
                       Ask a question about this document. Replies use RAG + Ollama (first reply can take a minute).
@@ -387,7 +387,7 @@ export default function DocumentChatPage() {
                       key={m.id}
                       className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
                         m.role === "user"
-                          ? "ml-auto rounded-tr-sm bg-blue-600 text-white dark:bg-blue-500"
+                          ? "ml-auto rounded-tr-sm bg-[#0C2C55] text-white dark:bg-[#0C2C55]"
                           : "rounded-tl-sm bg-slate-100 text-slate-900 dark:bg-zinc-800 dark:text-zinc-100"
                       }`}
                     >
@@ -423,7 +423,7 @@ export default function DocumentChatPage() {
                   </div>
                 )}
                 <form onSubmit={onSend} className="bg-slate-50/70 p-3 dark:bg-zinc-900/70">
-                  <div className="flex gap-2 rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-blue-300 dark:bg-zinc-950/70 dark:ring-zinc-700 dark:focus-within:ring-blue-500">
+                  <div className="flex gap-2 rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-[#0C2C55]/30 dark:bg-zinc-950/70 dark:ring-zinc-700 dark:focus-within:ring-[#0C2C55]">
                     <textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
@@ -434,7 +434,7 @@ export default function DocumentChatPage() {
                     <button
                       type="submit"
                       disabled={sending}
-                      className="self-end rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
+                      className="self-end rounded-xl bg-[#0C2C55] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#10386a] disabled:opacity-50 dark:bg-[#0C2C55] dark:hover:bg-[#10386a]"
                     >
                       {sending ? "…" : "Send"}
                     </button>
