@@ -44,9 +44,20 @@ def _get_vectorstore() -> Chroma:
 
 
 def _splitter() -> RecursiveCharacterTextSplitter:
+    # Prefer splits at markdown-style headings so sections (e.g. lists of hooks) stay with their title.
     return RecursiveCharacterTextSplitter(
         chunk_size=settings.rag_chunk_size,
         chunk_overlap=settings.rag_chunk_overlap,
+        separators=[
+            "\n## ",
+            "\n### ",
+            "\n#### ",
+            "\n##### ",
+            "\n\n",
+            "\n",
+            " ",
+            "",
+        ],
     )
 
 
@@ -105,15 +116,37 @@ def index_document(
     vs.add_documents(docs)
 
 
-def _retrieve(
-    user_id: uuid.UUID, document_ids: list[uuid.UUID], query: str, k: int
+def _retrieve_context(
+    user_id: uuid.UUID,
+    document_ids: list[uuid.UUID],
+    query: str,
+    *,
+    final_k: int,
+    fetch_k: int,
 ) -> list[LCDocument]:
+    """
+    Retrieve chunks for the LLM: MMR over a larger candidate pool (same embedding model, no cross-encoder)
+    so overlapping redundant hits do not crowd out other sections (e.g. different headings / lists).
+    """
+    where = _build_where(user_id, document_ids)
+    fk = max(int(fetch_k), int(final_k))
     vs = _get_vectorstore()
-    return vs.similarity_search(
-        query,
-        k=k,
-        filter=_build_where(user_id, document_ids),
-    )
+    if settings.rag_mmr_enabled and fk > final_k:
+        try:
+            return vs.max_marginal_relevance_search(
+                query,
+                k=final_k,
+                fetch_k=fk,
+                lambda_mult=settings.rag_mmr_lambda,
+                filter=where,
+            )
+        except Exception:
+            logger.exception("MMR retrieval failed; falling back to similarity search")
+    return vs.similarity_search(query, k=final_k, filter=where)
+
+
+def _summary_fetch_k() -> int:
+    return max(settings.rag_summary_fetch_k or settings.rag_fetch_k, settings.rag_summary_top_k)
 
 
 def _format_context(chunks: list[LCDocument]) -> str:
@@ -186,7 +219,13 @@ def answer_question(
     question: str,
 ) -> str:
     ids = [d.id for d in docs]
-    chunks = _retrieve(user_id, ids, question, settings.rag_top_k)
+    chunks = _retrieve_context(
+        user_id,
+        ids,
+        question,
+        final_k=settings.rag_top_k,
+        fetch_k=settings.rag_fetch_k,
+    )
     if not chunks:
         for d in docs:
             index_document(
@@ -195,7 +234,13 @@ def answer_question(
                 d.original_filename,
                 [(1, d.extracted_text or "")],
             )
-        chunks = _retrieve(user_id, ids, question, settings.rag_top_k)
+        chunks = _retrieve_context(
+            user_id,
+            ids,
+            question,
+            final_k=settings.rag_top_k,
+            fetch_k=settings.rag_fetch_k,
+        )
     if not chunks:
         return (
             "I couldn’t find anything relevant in your uploaded document for this question. "
@@ -207,10 +252,12 @@ def answer_question(
         [
             (
                 "human",
-                "You are a helpful assistant answering from the user’s uploaded document.\n\n"
+                "You are a helpful assistant answering from the user’s uploaded document(s).\n\n"
                 "Rules:\n"
                 "- Use ONLY the CONTEXT below. Do not invent facts or use outside knowledge.\n"
                 "- If the answer is not clearly supported by the context, say you can’t find it in the document.\n"
+                "- For lists (e.g. names, hooks, steps), include every distinct item that appears in the context; "
+                "do not invent items. If the context may be incomplete, say so.\n"
                 "- Write in a clear, friendly tone. Short paragraphs or bullet points are fine when they help readability.\n"
                 "- When you use specific information, cite the chunk number from the context in brackets, e.g. [1] or [2].\n"
                 "- If the context only partially answers the question, say what you can confirm and what is missing.\n\n"
@@ -233,10 +280,22 @@ def summarize_document_rag(
         "Provide a structured summary with: brief overview, key points, and practical takeaways. "
         "Use only the provided context."
     )
-    chunks = _retrieve(user_id, [document_id], q, settings.rag_summary_top_k)
+    chunks = _retrieve_context(
+        user_id,
+        [document_id],
+        q,
+        final_k=settings.rag_summary_top_k,
+        fetch_k=_summary_fetch_k(),
+    )
     if not chunks:
         index_document(user_id, document_id, document_title, [(1, extracted_text or "")])
-        chunks = _retrieve(user_id, [document_id], q, settings.rag_summary_top_k)
+        chunks = _retrieve_context(
+            user_id,
+            [document_id],
+            q,
+            final_k=settings.rag_summary_top_k,
+            fetch_k=_summary_fetch_k(),
+        )
     if not chunks:
         return "No text available to summarize."
 
