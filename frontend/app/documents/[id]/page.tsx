@@ -36,6 +36,7 @@ export default function DocumentChatPage() {
   const [thinking, setThinking] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [showDocPicker, setShowDocPicker] = useState(false);
 
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
@@ -43,12 +44,31 @@ export default function DocumentChatPage() {
   const [previewKind, setPreviewKind] = useState<"pdf" | "text" | "office" | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewDocId, setPreviewDocId] = useState<string>(id);
   const previewUrlRef = useRef<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const docPickerRef = useRef<HTMLDivElement | null>(null);
 
   const documentIds = useMemo(() => {
     const set = new Set<string>([id, ...extraIds]);
     return Array.from(set);
   }, [id, extraIds]);
+
+  const selectedDocs = useMemo(() => {
+    if (!doc) return [] as Document[];
+    const extraDocs = allDocs.filter((item) => extraIds.includes(item.id));
+    return [doc, ...extraDocs];
+  }, [allDocs, doc, extraIds]);
+
+  const previewDoc = useMemo(() => {
+    return selectedDocs.find((item) => item.id === previewDocId) ?? doc;
+  }, [doc, previewDocId, selectedDocs]);
+
+  const previewDocIndex = useMemo(() => {
+    if (!previewDoc) return 0;
+    const index = selectedDocs.findIndex((item) => item.id === previewDoc.id);
+    return index >= 0 ? index : 0;
+  }, [previewDoc, selectedDocs]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -75,7 +95,14 @@ export default function DocumentChatPage() {
   }, [load]);
 
   useEffect(() => {
-    if (!doc) return;
+    setPreviewDocId((current) => {
+      const exists = selectedDocs.some((item) => item.id === current);
+      return exists ? current : id;
+    });
+  }, [id, selectedDocs]);
+
+  useEffect(() => {
+    if (!previewDoc) return;
 
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
@@ -92,8 +119,8 @@ export default function DocumentChatPage() {
     (async () => {
       setPreviewLoading(true);
       try {
-        const blob = await fetchDocumentFile(id);
-        const mt = doc.mime_type.toLowerCase();
+        const blob = await fetchDocumentFile(previewDoc.id);
+        const mt = previewDoc.mime_type.toLowerCase();
         if (mt.includes("pdf")) {
           const buffer = await blob.arrayBuffer();
           if (!cancelled) {
@@ -130,7 +157,17 @@ export default function DocumentChatPage() {
         previewUrlRef.current = null;
       }
     };
-  }, [doc, id]);
+  }, [previewDoc]);
+
+  useEffect(() => {
+    function onPointerDown(event: MouseEvent) {
+      if (docPickerRef.current && !docPickerRef.current.contains(event.target as Node)) {
+        setShowDocPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, []);
 
   async function loadMessages(sid: string) {
     const msgs = await api<ChatMessage[]>(`/chat/sessions/${sid}/messages`);
@@ -197,7 +234,30 @@ export default function DocumentChatPage() {
   }
 
   function toggleExtra(docId: string) {
+    if (sessionId) {
+      setSessionId(null);
+      setMessages([]);
+    }
     setExtraIds((prev) => (prev.includes(docId) ? prev.filter((x) => x !== docId) : [...prev, docId]));
+  }
+
+  function onUseSelectedDocuments() {
+    setSessionId(null);
+    setMessages([]);
+    setShowDocPicker(false);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function showPreviousPreviewDoc() {
+    if (selectedDocs.length <= 1) return;
+    const nextIndex = previewDocIndex === 0 ? selectedDocs.length - 1 : previewDocIndex - 1;
+    setPreviewDocId(selectedDocs[nextIndex].id);
+  }
+
+  function showNextPreviewDoc() {
+    if (selectedDocs.length <= 1) return;
+    const nextIndex = previewDocIndex === selectedDocs.length - 1 ? 0 : previewDocIndex + 1;
+    setPreviewDocId(selectedDocs[nextIndex].id);
   }
 
   if (loading) {
@@ -222,7 +282,7 @@ export default function DocumentChatPage() {
   return (
     <RequireAuth>
       <div className="bg-slate-100 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
-        <div className="sticky top-[81px] z-30 w-full overflow-hidden border-y border-slate-200/80 bg-white backdrop-blur-xl">
+        <div className="sticky top-[81px] z-30 w-full overflow-visible border-y border-slate-200/80 bg-white backdrop-blur-xl">
           <div className="flex flex-col gap-4 px-4 py-3 sm:px-5 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0 flex-1">
               <button
@@ -238,6 +298,60 @@ export default function DocumentChatPage() {
             </div>
 
             <div className="flex w-full flex-col gap-2.5 xl:w-auto xl:flex-row xl:items-center xl:justify-end">
+              <div ref={docPickerRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowDocPicker((prev) => !prev)}
+                  className="group inline-flex min-h-[52px] items-center rounded-2xl border border-[#0C2C55]/15 bg-slate-100 px-3.5 py-2.5 text-left text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 text-sm font-bold tracking-tight">
+                      Select multiple documents ({extraIds.length + 1})
+                    </span>
+                  </span>
+                </button>
+
+                {showDocPicker && (
+                  <div className="absolute right-0 z-40 mt-2 w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-2xl">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Multi-document selection
+                    </p>
+                    <p className="mb-2 text-xs text-slate-500">
+                      Current document is always included. Pick extra files below.
+                    </p>
+
+                    <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                      {allDocs.length > 0 ? (
+                        allDocs.map((d) => (
+                          <label
+                            key={d.id}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={extraIds.includes(d.id)}
+                              onChange={() => toggleExtra(d.id)}
+                              className="rounded"
+                            />
+                            <span className="line-clamp-1">{d.original_filename}</span>
+                          </label>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400">No additional documents available.</p>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={onUseSelectedDocuments}
+                      className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-[#0C2C55] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#10386a]"
+                    >
+                      Use selected documents
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={onSummary}
@@ -312,21 +426,49 @@ export default function DocumentChatPage() {
         )}
 
         <div className="grid gap-0 px-0 py-0 lg:grid-cols-2">
-          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl border-l border-slate-200 bg-white p-0 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
+          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-t-2xl border-l border-slate-200 bg-white p-0 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
             <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-white shadow-sm dark:bg-zinc-900/40">
-              <h2 className="bg-white/80 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:bg-zinc-900/80 dark:text-zinc-100">
-                File preview
-              </h2>
+              <div className="flex items-center justify-between border-b border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-900 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-100">
+                <div className="min-w-0 truncate text-center flex-1">
+                  {selectedDocs.length > 1 && previewDoc
+                    ? `${previewDocIndex + 1} of ${selectedDocs.length} files: ${previewDoc.original_filename}`
+                    : previewDoc?.original_filename}
+                </div>
+                {selectedDocs.length > 1 && (
+                  <div className="ml-4 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={showPreviousPreviewDoc}
+                      aria-label="Previous file preview"
+                      className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={showNextPreviewDoc}
+                      aria-label="Next file preview"
+                      className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                {previewLoading && doc?.mime_type?.toLowerCase().includes("pdf") && <PdfPreviewSkeleton />}
-                {previewLoading && !doc?.mime_type?.toLowerCase().includes("pdf") && (
+                {previewLoading && previewDoc?.mime_type?.toLowerCase().includes("pdf") && <PdfPreviewSkeleton />}
+                {previewLoading && !previewDoc?.mime_type?.toLowerCase().includes("pdf") && (
                   <p className="bg-white/70 p-4 text-sm text-slate-500">Loading preview…</p>
                 )}
                 {previewError && (
                   <p className="bg-red-50/80 p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
                 )}
                 {!previewLoading && !previewError && previewKind === "pdf" && pdfData && (
-                  <PdfLightPreview fileData={pdfData} />
+                  <PdfLightPreview fileData={pdfData} showToolbar={false} />
                 )}
                 {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
                   <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-white/80 p-4 text-xs text-slate-800 dark:text-zinc-200">
@@ -356,31 +498,6 @@ export default function DocumentChatPage() {
                 <div className="rounded-2xl bg-white p-4 text-sm text-slate-800 shadow-sm dark:bg-zinc-900/50 dark:text-zinc-200">
                   <h2 className="font-semibold text-slate-900 dark:text-zinc-100">Summary</h2>
                   <div className="prose prose-sm mt-2 max-w-none whitespace-pre-wrap dark:prose-invert">{summary}</div>
-                </div>
-              )}
-
-              {allDocs.length > 0 && (
-                <div className="rounded-2xl bg-slate-100/80 p-4 shadow-sm dark:bg-zinc-900/60">
-                  <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">Multi-document context</p>
-                  <p className="text-xs text-slate-500">
-                    Include additional uploaded files when starting a new thread only (locked while a saved session is selected).
-                  </p>
-                  <ul className="mt-3 space-y-2">
-                    {allDocs.map((d) => (
-                      <li key={d.id}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition hover:bg-slate-200 dark:hover:bg-zinc-800/80">
-                          <input
-                            type="checkbox"
-                            disabled={!!sessionId}
-                            checked={extraIds.includes(d.id)}
-                            onChange={() => toggleExtra(d.id)}
-                            className="rounded"
-                          />
-                          <span>{d.original_filename}</span>
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
               )}
             </div>
@@ -437,6 +554,7 @@ export default function DocumentChatPage() {
                 <form onSubmit={onSend} className="bg-slate-50/70 p-3 dark:bg-zinc-900/70">
                   <div className="flex gap-2 rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-[#0C2C55]/30 dark:bg-zinc-950/70 dark:ring-zinc-700 dark:focus-within:ring-[#0C2C55]">
                     <textarea
+                      ref={inputRef}
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => {

@@ -4,17 +4,20 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clearToken, getToken } from "@/lib/auth";
-import { api, type Document } from "@/lib/api";
+import { api, type Document, type User } from "@/lib/api";
 
 export function Nav() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [loggedIn, setLoggedIn] = useState(false);
+  const [me, setMe] = useState<User | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [search, setSearch] = useState("");
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const profileRef = useRef<HTMLDivElement | null>(null);
 
   const showDocumentSearch = pathname === "/documents" || pathname.startsWith("/documents/");
   const searchQuery = search.trim();
@@ -62,9 +65,30 @@ export function Nav() {
   }, [loggedIn, showDocumentSearch]);
 
   useEffect(() => {
+    if (!loggedIn) {
+      setMe(null);
+      return;
+    }
+    let cancelled = false;
+    api<User>("/auth/me")
+      .then((user) => {
+        if (!cancelled) setMe(user);
+      })
+      .catch(() => {
+        if (!cancelled) setMe(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedIn]);
+
+  useEffect(() => {
     function onPointerDown(e: MouseEvent) {
       if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) {
         setShowSearchDropdown(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
       }
     }
     document.addEventListener("mousedown", onPointerDown);
@@ -121,6 +145,12 @@ export function Nav() {
     clearToken();
     router.push("/login");
     router.refresh();
+  }
+
+  function displayName(email: string | undefined): string {
+    if (!email) return "User";
+    const local = email.split("@")[0] ?? "user";
+    return local.charAt(0).toUpperCase() + local.slice(1);
   }
 
   return (
@@ -228,18 +258,49 @@ export function Nav() {
 
         <nav className="flex flex-wrap items-center gap-3 text-sm">
           {loggedIn ? (
-            <>
-              <Link className={navLinkClass("/documents")} href="/documents">
-                Documents
-              </Link>
+            <div ref={profileRef} className="relative">
               <button
                 type="button"
-                onClick={logout}
-                className="rounded-xl border border-zinc-300 px-3 py-1.5 font-medium text-zinc-700 transition duration-200 hover:bg-zinc-50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0C2C55]/30 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                onClick={() => setShowProfileMenu((prev) => !prev)}
+                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0C2C55]/30"
               >
-                Log out
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-xs font-bold text-white shadow-sm">
+                  {displayName(me?.email).charAt(0)}
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="truncate text-sm font-semibold text-slate-900">{displayName(me?.email)}</p>
+                  <p className="truncate text-xs text-slate-400">{me?.email ?? "Signed in"}</p>
+                </div>
+                <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v.01M12 12v.01M12 19v.01" strokeLinecap="round" />
+                </svg>
               </button>
-            </>
+
+              {showProfileMenu && (
+                <div className="absolute right-0 top-full z-40 mt-2 w-52 rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                  <Link href="/documents" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50">
+                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <path d="M14 2v6h6" />
+                    </svg>
+                    Documents
+                  </Link>
+                  <div className="my-1 border-t border-slate-100" />
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <Link className={navLinkClass("/login")} href="/login">
