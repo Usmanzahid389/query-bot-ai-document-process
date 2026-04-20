@@ -1,6 +1,5 @@
 "use client";
 
-import { BookOpen, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -44,10 +43,11 @@ export function PdfPreviewSkeleton({ pageWidth }: { pageWidth?: number }) {
 }
 
 type Props = {
-  fileUrl: string;
+  fileData: Uint8Array;
+  showToolbar?: boolean;
 };
 
-export function PdfLightPreview({ fileUrl }: Props) {
+export function PdfLightPreview({ fileData, showToolbar = true }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
   const [docError, setDocError] = useState<string | null>(null);
@@ -56,13 +56,18 @@ export function PdfLightPreview({ fileUrl }: Props) {
   const firstPagePainted = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [baseWidth, setBaseWidth] = useState(640);
+  const pdfFile = useRef<{ data: Uint8Array } | null>(null);
+
+  if (!pdfFile.current || pdfFile.current.data !== fileData) {
+    pdfFile.current = { data: fileData };
+  }
 
   useEffect(() => {
     setNumPages(0);
     setDocError(null);
     setSkeletonOverlay(true);
     firstPagePainted.current = false;
-  }, [fileUrl]);
+  }, [fileData]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -97,7 +102,7 @@ export function PdfLightPreview({ fileUrl }: Props) {
     if (numPages === 0 || !skeletonOverlay) return undefined;
     const t = window.setTimeout(() => setSkeletonOverlay(false), 8000);
     return () => window.clearTimeout(t);
-  }, [numPages, skeletonOverlay, fileUrl]);
+  }, [numPages, skeletonOverlay, fileData]);
 
   const width = Math.round(baseWidth * scale);
 
@@ -105,42 +110,47 @@ export function PdfLightPreview({ fileUrl }: Props) {
 
   return (
     <div className="flex h-full min-h-[400px] flex-col bg-slate-100 dark:bg-zinc-900/50">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-zinc-300">
-          <BookOpen className="h-4 w-4 shrink-0 text-slate-500 dark:text-zinc-400" aria-hidden />
-          <span>
-            {numPages > 0 ? (
-              <>
-                <span className="font-medium text-slate-900 dark:text-white">{numPages}</span> pages · scroll
-              </>
-            ) : (
-              <span className="text-slate-400 dark:text-zinc-500">Opening…</span>
-            )}
-          </span>
+      {showToolbar && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-zinc-300">
+            <span>
+              {numPages > 0 ? (
+                <>
+                  <span className="font-medium text-slate-900 dark:text-white">{numPages}</span> pages · scroll
+                </>
+              ) : (
+                <span className="text-slate-400 dark:text-zinc-500">Opening…</span>
+              )}
+            </span>
+          </div>
+          <span className="hidden h-4 w-px bg-slate-200 sm:inline dark:bg-zinc-600" />
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Zoom out"
+              onClick={() => setScale((s) => Math.max(0.6, Math.round((s - 0.15) * 100) / 100))}
+              className="rounded-lg p-2 text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 12h14" strokeLinecap="round" />
+              </svg>
+            </button>
+            <span className="min-w-[3rem] text-center text-xs font-medium text-slate-500 dark:text-zinc-400">
+              {Math.round(scale * 100)}%
+            </span>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              onClick={() => setScale((s) => Math.min(2.2, Math.round((s + 0.15) * 100) / 100))}
+              className="rounded-lg p-2 text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
         </div>
-        <span className="hidden h-4 w-px bg-slate-200 sm:inline dark:bg-zinc-600" />
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => setScale((s) => Math.max(0.6, Math.round((s - 0.15) * 100) / 100))}
-            className="rounded-lg p-2 text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            <ZoomOut className="h-5 w-5" />
-          </button>
-          <span className="min-w-[3rem] text-center text-xs font-medium text-slate-500 dark:text-zinc-400">
-            {Math.round(scale * 100)}%
-          </span>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => setScale((s) => Math.min(2.2, Math.round((s + 0.15) * 100) / 100))}
-            className="rounded-lg p-2 text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            <ZoomIn className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
+      )}
 
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto bg-slate-100 dark:bg-zinc-900/50">
         <div
@@ -149,8 +159,7 @@ export function PdfLightPreview({ fileUrl }: Props) {
           }`}
         >
           <Document
-            key={fileUrl}
-            file={fileUrl}
+            file={pdfFile.current}
             onLoadSuccess={onDocLoad}
             onLoadError={(err) => {
               setDocError(err.message || "Could not open this PDF");
@@ -163,7 +172,7 @@ export function PdfLightPreview({ fileUrl }: Props) {
                 const pageNum = i + 1;
                 return (
                   <div
-                    key={`${fileUrl}-p-${pageNum}-${width}`}
+                    key={`pdf-page-${pageNum}-${width}`}
                     className="rounded-lg border border-slate-200/80 bg-white shadow-md dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <Page

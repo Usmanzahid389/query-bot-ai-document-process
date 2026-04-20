@@ -1,24 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { clearToken } from "@/lib/auth";
-import { api, uploadDocument, type Document, type User } from "@/lib/api";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { api, uploadDocument, type Document } from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
 
 export default function DocumentsPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [docs, setDocs] = useState<Document[]>([]);
-  const [search, setSearch] = useState("");
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const [me, setMe] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [drag, setDrag] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const searchWrapRef = useRef<HTMLDivElement | null>(null);
-  const profileRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -33,27 +28,6 @@ export default function DocumentsPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    let mounted = true;
-    api<User>("/auth/me")
-      .then((u) => { if (mounted) setMe(u); })
-      .catch(() => { if (mounted) setMe(null); });
-    return () => { mounted = false; };
-  }, []);
-
-  useEffect(() => {
-    function onPointerDown(e: MouseEvent) {
-      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) {
-        setShowSearchDropdown(false);
-      }
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setShowProfileMenu(false);
-      }
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, []);
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -75,6 +49,18 @@ export default function DocumentsPage() {
     e.target.value = "";
   }
 
+  async function deleteDocument(document: Document) {
+    const ok = window.confirm(`Delete "${document.original_filename}"? This cannot be undone.`);
+    if (!ok) return;
+    setError(null);
+    try {
+      await api<void>(`/documents/${document.id}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDrag(false);
@@ -87,38 +73,20 @@ export default function DocumentsPage() {
     return ext ? ext.toUpperCase() : "FILE";
   }
 
-  function displayName(email: string | undefined): string {
-    if (!email) return "User";
-    const local = email.split("@")[0] ?? "user";
-    return local.charAt(0).toUpperCase() + local.slice(1);
-  }
-
-  function logout() {
-    clearToken();
-    router.push("/login");
-    router.refresh();
-  }
-
-  const searchQuery = search.trim();
+  const searchQuery = (searchParams.get("search") ?? "").trim();
   const filteredFiles = docs.filter((file) =>
     file.original_filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const showSearchResults = searchQuery.length > 0;
-  const searchResults = filteredFiles.slice(0, 8);
 
-  function renderHighlightedName(name: string, query: string) {
-    const q = query.trim();
-    if (!q) return name;
-    const idx = name.toLowerCase().indexOf(q.toLowerCase());
-    if (idx === -1) return name;
-    return (
-      <>
-        {name.slice(0, idx)}
-        <mark className="rounded bg-amber-100 px-0.5 text-slate-900">{name.slice(idx, idx + q.length)}</mark>
-        {name.slice(idx + q.length)}
-      </>
-    );
-  }
+  const sidebarLinkClass = (href: string) => {
+    const isActive = pathname === href;
+    return [
+      "flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm transition",
+      isActive
+        ? "bg-[#0C2C55]/8 font-semibold text-[#0C2C55]"
+        : "font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+    ].join(" ");
+  };
 
   return (
     <RequireAuth>
@@ -129,7 +97,7 @@ export default function DocumentsPage() {
           <nav className="flex-1 space-y-1 px-3 py-4">
             <Link
               href="/"
-              className="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+              className={sidebarLinkClass("/")}
             >
               <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -138,7 +106,7 @@ export default function DocumentsPage() {
             </Link>
             <Link
               href="/documents"
-              className="flex items-center gap-3 rounded-xl bg-[#0C2C55]/8 px-4 py-2.5 text-sm font-semibold text-[#0C2C55]"
+              className={sidebarLinkClass("/documents")}
             >
               <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -146,146 +114,47 @@ export default function DocumentsPage() {
               </svg>
               Documents
             </Link>
-          </nav>
-
-          {/* Profile card */}
-          <div ref={profileRef} className="relative border-t border-slate-100 px-3 py-4">
-            <button
-              type="button"
-              onClick={() => setShowProfileMenu((v) => !v)}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-50"
+            <Link
+              href="/documents/multi"
+              className={sidebarLinkClass("/documents/multi")}
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-xs font-bold text-white shadow-sm">
-                {displayName(me?.email).charAt(0)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-900">{displayName(me?.email)}</p>
-                <p className="truncate text-xs text-slate-400">{me?.email ?? "Signed in"}</p>
-              </div>
-              <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 5v.01M12 12v.01M12 19v.01" strokeLinecap="round" />
+              <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
-            </button>
-
-            {showProfileMenu && (
-              <div className="absolute bottom-full left-3 right-3 mb-2 rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
-                <button type="button" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50">
-                  <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                  Profile
-                </button>
-                <button type="button" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50">
-                  <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg>
-                  Settings
-                </button>
-                <div className="my-1 border-t border-slate-100" />
-                <button type="button" onClick={logout} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50">
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-                  Log out
-                </button>
-              </div>
-            )}
-          </div>
+              Multi-document chat
+            </Link>
+            <Link
+              href="/documents/bookmarks"
+              className={sidebarLinkClass("/documents/bookmarks")}
+            >
+              <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+              Bookmarks
+            </Link>
+          </nav>
         </aside>
 
         {/* ── Main content ── */}
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 lg:px-10">
             <section className="space-y-1">
-              <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Documents Library</h1>
-              <p className="text-sm text-slate-500">
-                Manage your knowledge base and interact with your AI assistant.
-              </p>
-            </section>
-
-            {/* Search */}
-            <section>
-              <div ref={searchWrapRef} className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
-                  <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <circle cx="11" cy="11" r="8" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
-                  </svg>
-                </span>
-                <input
-                  type="text"
-                  value={search}
-                  onFocus={() => setShowSearchDropdown(true)}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setShowSearchDropdown(true);
-                  }}
-                  placeholder="Search documents..."
-                  className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-20 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 transition-colors focus:border-slate-300 focus:outline-none"
-                />
-                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 hidden rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline-flex">⌘ K</span>
-
-                {showSearchResults && (
-                  <button
-                    type="button"
-                    onClick={() => { setSearch(""); setShowSearchDropdown(false); }}
-                    aria-label="Clear search"
-                    className="absolute right-12 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 sm:right-16"
-                  >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-
-                {/* Search dropdown */}
-                {showSearchDropdown && showSearchResults && (
-                  <div className="absolute left-0 right-0 z-30 mt-2 rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Results</span>
-                      <span className="rounded-full bg-[#0C2C55]/10 px-2 py-0.5 text-[10px] font-bold text-[#0C2C55]">
-                        {filteredFiles.length} found
-                      </span>
-                    </div>
-
-                    {filteredFiles.length === 0 ? (
-                      <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                        <svg className="h-8 w-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                          <circle cx="11" cy="11" r="8" />
-                          <path strokeLinecap="round" d="M21 21l-4.35-4.35" />
-                        </svg>
-                        <p className="text-sm font-medium text-slate-400">No files match your search</p>
-                        <p className="text-xs text-slate-300">Try a different keyword</p>
-                      </div>
-                    ) : (
-                      <ul className="max-h-[340px] divide-y divide-slate-50 overflow-y-auto p-1.5">
-                        {searchResults.map((d) => (
-                          <li key={`dropdown-${d.id}`}>
-                            <Link
-                              href={`/documents/${d.id}`}
-                              onClick={() => setShowSearchDropdown(false)}
-                              className="group/item flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-slate-50"
-                            >
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0C2C55] to-[#10386a]">
-                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                </svg>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-slate-900">
-                                  {renderHighlightedName(d.original_filename, searchQuery)}
-                                </p>
-                                <p className="text-xs text-slate-400">
-                                  {(d.size_bytes / 1024).toFixed(1)} KB · {new Date(d.created_at).toLocaleDateString()}
-                                </p>
-                              </div>
-                              <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-500">
-                                {extensionOf(d.original_filename)}
-                              </span>
-                              <span className="hidden rounded-lg bg-[#0C2C55] px-2.5 py-1 text-[10px] font-bold text-white opacity-0 transition group-hover/item:inline-flex group-hover/item:opacity-100">
-                                Open
-                              </span>
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Documents Library</h1>
+                  <p className="text-sm text-slate-500">
+                    Manage your knowledge base and interact with your AI assistant.
+                  </p>
+                </div>
+                <Link
+                  href="/documents/multi"
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#0C2C55] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#10386a]"
+                >
+                  Multi-document chat
+                </Link>
               </div>
             </section>
 
@@ -322,7 +191,11 @@ export default function DocumentsPage() {
             <section className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900">All Files</h2>
-                <p className="text-xs font-medium text-slate-400">{docs.length} document{docs.length !== 1 ? "s" : ""}</p>
+                <p className="text-xs font-medium text-slate-400">
+                  {searchQuery
+                    ? `${filteredFiles.length} result${filteredFiles.length !== 1 ? "s" : ""}`
+                    : `${docs.length} document${docs.length !== 1 ? "s" : ""}`}
+                </p>
               </div>
 
               {docs.length === 0 ? (
@@ -332,6 +205,15 @@ export default function DocumentsPage() {
                   </svg>
                   <p className="text-sm font-medium text-slate-400">No documents yet</p>
                   <p className="text-xs text-slate-300">Upload a file to get started</p>
+                </div>
+              ) : filteredFiles.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+                  <svg className="mx-auto mb-3 h-10 w-10 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="11" cy="11" r="8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+                  </svg>
+                  <p className="text-sm font-medium text-slate-400">No documents match your search</p>
+                  <p className="text-xs text-slate-300">Use the top header search to try another filename</p>
                 </div>
               ) : (
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -346,7 +228,7 @@ export default function DocumentsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {docs.map((d, i) => (
+                      {filteredFiles.map((d, i) => (
                         <tr key={d.id} className={`transition-colors hover:bg-[#0C2C55]/[0.03] ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-3">
@@ -368,15 +250,31 @@ export default function DocumentsPage() {
                           <td className="px-5 py-3.5 text-sm text-slate-500">{(d.size_bytes / 1024).toFixed(1)} KB</td>
                           <td className="px-5 py-3.5 text-sm text-slate-400">{new Date(d.created_at).toLocaleDateString()}</td>
                           <td className="px-5 py-3.5 text-right">
-                            <Link
-                              href={`/documents/${d.id}`}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C2C55] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#10386a] hover:shadow-md"
-                            >
-                              Open
-                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                              </svg>
-                            </Link>
+                            <div className="inline-flex items-center gap-2">
+                              <Link
+                                href={`/documents/${d.id}`}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C2C55] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#10386a] hover:shadow-md"
+                              >
+                                Open
+                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                </svg>
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => void deleteDocument(d)}
+                                aria-label={`Delete ${d.original_filename}`}
+                                title="Delete document"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-black transition hover:border-black hover:bg-slate-50"
+                              >
+                                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M3 6h18" strokeLinecap="round" />
+                                  <path d="M8 6V4h8v2" strokeLinecap="round" strokeLinejoin="round" />
+                                  <path d="M19 6l-1 14H6L5 6" strokeLinecap="round" strokeLinejoin="round" />
+                                  <path d="M10 11v6M14 11v6" strokeLinecap="round" />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}

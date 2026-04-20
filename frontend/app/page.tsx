@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Inter, Manrope } from "next/font/google";
 
@@ -61,7 +61,11 @@ const features = [
 
 export default function Home() {
   const [openModal, setOpenModal] = useState<null | "business" | "legal">(null);
-  const isLoggedIn = typeof window !== "undefined" && !!localStorage.getItem("querybot_token");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setIsLoggedIn(!!localStorage.getItem("querybot_token"));
+  }, []);
 
   return (
     <>
