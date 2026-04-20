@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clearToken } from "@/lib/auth";
 import { api, uploadDocument, type Document, type User } from "@/lib/api";
@@ -9,15 +9,13 @@ import { RequireAuth } from "@/components/RequireAuth";
 
 export default function DocumentsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [docs, setDocs] = useState<Document[]>([]);
-  const [search, setSearch] = useState("");
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [me, setMe] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [drag, setDrag] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
@@ -44,9 +42,6 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     function onPointerDown(e: MouseEvent) {
-      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) {
-        setShowSearchDropdown(false);
-      }
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setShowProfileMenu(false);
       }
@@ -99,26 +94,10 @@ export default function DocumentsPage() {
     router.refresh();
   }
 
-  const searchQuery = search.trim();
+  const searchQuery = (searchParams.get("search") ?? "").trim();
   const filteredFiles = docs.filter((file) =>
     file.original_filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const showSearchResults = searchQuery.length > 0;
-  const searchResults = filteredFiles.slice(0, 8);
-
-  function renderHighlightedName(name: string, query: string) {
-    const q = query.trim();
-    if (!q) return name;
-    const idx = name.toLowerCase().indexOf(q.toLowerCase());
-    if (idx === -1) return name;
-    return (
-      <>
-        {name.slice(0, idx)}
-        <mark className="rounded bg-amber-100 px-0.5 text-slate-900">{name.slice(idx, idx + q.length)}</mark>
-        {name.slice(idx + q.length)}
-      </>
-    );
-  }
 
   return (
     <RequireAuth>
@@ -197,98 +176,6 @@ export default function DocumentsPage() {
               </p>
             </section>
 
-            {/* Search */}
-            <section>
-              <div ref={searchWrapRef} className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
-                  <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <circle cx="11" cy="11" r="8" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
-                  </svg>
-                </span>
-                <input
-                  type="text"
-                  value={search}
-                  onFocus={() => setShowSearchDropdown(true)}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setShowSearchDropdown(true);
-                  }}
-                  placeholder="Search documents..."
-                  className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-20 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 transition-colors focus:border-slate-300 focus:outline-none"
-                />
-                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 hidden rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline-flex">⌘ K</span>
-
-                {showSearchResults && (
-                  <button
-                    type="button"
-                    onClick={() => { setSearch(""); setShowSearchDropdown(false); }}
-                    aria-label="Clear search"
-                    className="absolute right-12 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 sm:right-16"
-                  >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-
-                {/* Search dropdown */}
-                {showSearchDropdown && showSearchResults && (
-                  <div className="absolute left-0 right-0 z-30 mt-2 rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Results</span>
-                      <span className="rounded-full bg-[#0C2C55]/10 px-2 py-0.5 text-[10px] font-bold text-[#0C2C55]">
-                        {filteredFiles.length} found
-                      </span>
-                    </div>
-
-                    {filteredFiles.length === 0 ? (
-                      <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                        <svg className="h-8 w-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                          <circle cx="11" cy="11" r="8" />
-                          <path strokeLinecap="round" d="M21 21l-4.35-4.35" />
-                        </svg>
-                        <p className="text-sm font-medium text-slate-400">No files match your search</p>
-                        <p className="text-xs text-slate-300">Try a different keyword</p>
-                      </div>
-                    ) : (
-                      <ul className="max-h-[340px] divide-y divide-slate-50 overflow-y-auto p-1.5">
-                        {searchResults.map((d) => (
-                          <li key={`dropdown-${d.id}`}>
-                            <Link
-                              href={`/documents/${d.id}`}
-                              onClick={() => setShowSearchDropdown(false)}
-                              className="group/item flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-slate-50"
-                            >
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#0C2C55] to-[#10386a]">
-                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                </svg>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-slate-900">
-                                  {renderHighlightedName(d.original_filename, searchQuery)}
-                                </p>
-                                <p className="text-xs text-slate-400">
-                                  {(d.size_bytes / 1024).toFixed(1)} KB · {new Date(d.created_at).toLocaleDateString()}
-                                </p>
-                              </div>
-                              <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-500">
-                                {extensionOf(d.original_filename)}
-                              </span>
-                              <span className="hidden rounded-lg bg-[#0C2C55] px-2.5 py-1 text-[10px] font-bold text-white opacity-0 transition group-hover/item:inline-flex group-hover/item:opacity-100">
-                                Open
-                              </span>
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
-
             {/* Upload */}
             <section
               onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
@@ -322,7 +209,11 @@ export default function DocumentsPage() {
             <section className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900">All Files</h2>
-                <p className="text-xs font-medium text-slate-400">{docs.length} document{docs.length !== 1 ? "s" : ""}</p>
+                <p className="text-xs font-medium text-slate-400">
+                  {searchQuery
+                    ? `${filteredFiles.length} result${filteredFiles.length !== 1 ? "s" : ""}`
+                    : `${docs.length} document${docs.length !== 1 ? "s" : ""}`}
+                </p>
               </div>
 
               {docs.length === 0 ? (
@@ -332,6 +223,15 @@ export default function DocumentsPage() {
                   </svg>
                   <p className="text-sm font-medium text-slate-400">No documents yet</p>
                   <p className="text-xs text-slate-300">Upload a file to get started</p>
+                </div>
+              ) : filteredFiles.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+                  <svg className="mx-auto mb-3 h-10 w-10 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="11" cy="11" r="8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+                  </svg>
+                  <p className="text-sm font-medium text-slate-400">No documents match your search</p>
+                  <p className="text-xs text-slate-300">Use the top header search to try another filename</p>
                 </div>
               ) : (
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -346,7 +246,7 @@ export default function DocumentsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {docs.map((d, i) => (
+                      {filteredFiles.map((d, i) => (
                         <tr key={d.id} className={`transition-colors hover:bg-[#0C2C55]/[0.03] ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-3">

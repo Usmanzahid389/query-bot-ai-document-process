@@ -44,10 +44,10 @@ export function PdfPreviewSkeleton({ pageWidth }: { pageWidth?: number }) {
 }
 
 type Props = {
-  fileUrl: string;
+  fileData: Uint8Array;
 };
 
-export function PdfLightPreview({ fileUrl }: Props) {
+export function PdfLightPreview({ fileData }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
   const [docError, setDocError] = useState<string | null>(null);
@@ -56,13 +56,18 @@ export function PdfLightPreview({ fileUrl }: Props) {
   const firstPagePainted = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [baseWidth, setBaseWidth] = useState(640);
+  const pdfFile = useRef<{ data: Uint8Array } | null>(null);
+
+  if (!pdfFile.current || pdfFile.current.data !== fileData) {
+    pdfFile.current = { data: fileData };
+  }
 
   useEffect(() => {
     setNumPages(0);
     setDocError(null);
     setSkeletonOverlay(true);
     firstPagePainted.current = false;
-  }, [fileUrl]);
+  }, [fileData]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -97,7 +102,7 @@ export function PdfLightPreview({ fileUrl }: Props) {
     if (numPages === 0 || !skeletonOverlay) return undefined;
     const t = window.setTimeout(() => setSkeletonOverlay(false), 8000);
     return () => window.clearTimeout(t);
-  }, [numPages, skeletonOverlay, fileUrl]);
+  }, [numPages, skeletonOverlay, fileData]);
 
   const width = Math.round(baseWidth * scale);
 
@@ -149,8 +154,7 @@ export function PdfLightPreview({ fileUrl }: Props) {
           }`}
         >
           <Document
-            key={fileUrl}
-            file={fileUrl}
+            file={pdfFile.current}
             onLoadSuccess={onDocLoad}
             onLoadError={(err) => {
               setDocError(err.message || "Could not open this PDF");
@@ -163,7 +167,7 @@ export function PdfLightPreview({ fileUrl }: Props) {
                 const pageNum = i + 1;
                 return (
                   <div
-                    key={`${fileUrl}-p-${pageNum}-${width}`}
+                    key={`pdf-page-${pageNum}-${width}`}
                     className="rounded-lg border border-slate-200/80 bg-white shadow-md dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <Page

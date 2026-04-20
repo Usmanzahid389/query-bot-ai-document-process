@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfLightPreview, PdfPreviewSkeleton } from "@/components/PdfLightPreview";
 import { RequireAuth } from "@/components/RequireAuth";
+import { ChatHeader } from "@/components/ChatHeader";
 import {
   api,
   downloadBlob,
@@ -32,7 +33,11 @@ export default function DocumentChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
 
+  const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
   const [textFilePreview, setTextFilePreview] = useState<string | null>(null);
   const [previewKind, setPreviewKind] = useState<"pdf" | "text" | "office" | null>(null);
@@ -76,6 +81,7 @@ export default function DocumentChatPage() {
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = null;
     }
+    setPdfData(null);
     setFileBlobUrl(null);
     setTextFilePreview(null);
     setPreviewKind(null);
@@ -89,10 +95,9 @@ export default function DocumentChatPage() {
         const blob = await fetchDocumentFile(id);
         const mt = doc.mime_type.toLowerCase();
         if (mt.includes("pdf")) {
-          const url = URL.createObjectURL(blob);
-          previewUrlRef.current = url;
+          const buffer = await blob.arrayBuffer();
           if (!cancelled) {
-            setFileBlobUrl(url);
+            setPdfData(new Uint8Array(buffer));
             setPreviewKind("pdf");
           }
         } else if (mt.startsWith("text/")) {
@@ -144,6 +149,7 @@ export default function DocumentChatPage() {
     e.preventDefault();
     if (!input.trim()) return;
     setSending(true);
+    setThinking(true);
     setError(null);
     try {
       const body: {
@@ -153,16 +159,21 @@ export default function DocumentChatPage() {
       } = { document_ids: documentIds, message: input.trim() };
       if (sessionId) body.session_id = sessionId;
 
-      const res = await api<ChatSendResponse>("/chat/messages", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const [res] = await Promise.all([
+        api<ChatSendResponse>("/chat/messages", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+        new Promise((resolve) => window.setTimeout(resolve, 2000)),
+      ]);
+      setThinking(false);
       setSessionId(res.session_id);
       setInput("");
       await loadMessages(res.session_id);
       const sess = await api<ChatSession[]>(`/chat/sessions?document_id=${encodeURIComponent(id)}`);
       setSessions(sess);
     } catch (err) {
+      setThinking(false);
       setError(err instanceof Error ? err.message : "Send failed");
     } finally {
       setSending(false);
@@ -171,11 +182,17 @@ export default function DocumentChatPage() {
 
   async function onSummary() {
     setError(null);
+    setSummaryLoading(true);
     try {
-      const s = await api<SummaryResponse>(`/documents/${id}/summary`, { method: "POST" });
+      const [s] = await Promise.all([
+        api<SummaryResponse>(`/documents/${id}/summary`, { method: "POST" }),
+        new Promise((resolve) => window.setTimeout(resolve, 1000)),
+      ]);
       setSummary(s.summary);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Summary failed");
+    } finally {
+      setSummaryLoading(false);
     }
   }
 
@@ -204,66 +221,99 @@ export default function DocumentChatPage() {
 
   return (
     <RequireAuth>
-      <div className="space-y-5 rounded-3xl bg-slate-100 p-4 sm:p-6 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
-        <div className="flex flex-wrap items-start justify-between gap-4 rounded-3xl bg-white p-5 shadow-md shadow-slate-200/60 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800">
-          <div className="min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={() => router.push("/documents")}
-              className="inline-flex items-center rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-sm transition hover:bg-white hover:text-slate-800 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
-            >
-              ← All documents
-            </button>
-            <h1 className="mt-3 truncate text-2xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">{doc.original_filename}</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-zinc-300">
-              Text extract:{" "}
-              {doc.text_preview.length > 200
-                ? `${doc.text_preview.slice(0, 200)}…`
-                : doc.text_preview || "(empty)"}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white/80 p-1.5 shadow-sm dark:bg-zinc-800/80">
-            <button
-              type="button"
-              onClick={onSummary}
-              className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-zinc-700 dark:text-zinc-100"
-            >
-              Generate summary
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                downloadBlob(`/export/summary/${id}?format=pdf`, `summary-${id}.pdf`).catch((e) =>
-                  setError(e instanceof Error ? e.message : "Export failed")
-                )
-              }
-              className="rounded-xl bg-[#0C2C55]/10 px-4 py-2 text-sm font-semibold text-[#0C2C55] transition hover:bg-[#0C2C55]/15 dark:bg-[#0C2C55]/30 dark:text-slate-200"
-            >
-              Export summary PDF
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                downloadBlob(`/export/summary/${id}?format=docx`, `summary-${id}.docx`).catch((e) =>
-                  setError(e instanceof Error ? e.message : "Export failed")
-                )
-              }
-              className="rounded-xl bg-[#0C2C55]/10 px-4 py-2 text-sm font-semibold text-[#0C2C55] transition hover:bg-[#0C2C55]/15 dark:bg-[#0C2C55]/30 dark:text-slate-200"
-            >
-              Export summary DOCX
-            </button>
+      <div className="bg-slate-100 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
+        <div className="sticky top-[81px] z-30 w-full overflow-hidden border-y border-slate-200/80 bg-white backdrop-blur-xl">
+          <div className="flex flex-col gap-4 px-4 py-3 sm:px-5 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => router.push("/documents")}
+                aria-label="Back to documents"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 transition hover:border-slate-300 hover:text-slate-800 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex w-full flex-col gap-2.5 xl:w-auto xl:flex-row xl:items-center xl:justify-end">
+              <button
+                type="button"
+                onClick={onSummary}
+                disabled={summaryLoading}
+                className={`group inline-flex items-center rounded-2xl border px-3.5 py-2.5 text-left transition duration-200 ${
+                  summaryLoading
+                    ? "cursor-wait border-[#0C2C55]/20 bg-slate-100 text-[#0C2C55]"
+                    : "border-[#0C2C55]/15 bg-slate-100 text-[#0C2C55] hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 3l1.2 3.2L16.4 7.4l-3.2 1.2L12 11.8l-1.2-3.2L7.6 7.4l3.2-1.2L12 3Z" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M18.5 11.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8Z" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M6.5 13.5l.9 2.2 2.1.8-2.1.8-.9 2.2-.9-2.2-2.1-.8 2.1-.8.9-2.2Z" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 text-sm font-bold tracking-tight">{summaryLoading ? "Generating..." : "Generate summary"}</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  downloadBlob(`/export/summary/${id}?format=pdf`, `summary-${id}.pdf`).catch((e) =>
+                    setError(e instanceof Error ? e.message : "Export failed")
+                  )
+                }
+                className="group inline-flex items-center rounded-2xl border border-[#0C2C55]/15 bg-slate-100 px-3.5 py-2.5 text-left text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 3v12" strokeLinecap="round" />
+                      <path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M5 21h14" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 text-sm font-bold tracking-tight">Export PDF</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  downloadBlob(`/export/summary/${id}?format=docx`, `summary-${id}.docx`).catch((e) =>
+                    setError(e instanceof Error ? e.message : "Export failed")
+                  )
+                }
+                className="group inline-flex items-center rounded-2xl border border-[#0C2C55]/15 bg-slate-100 px-3.5 py-2.5 text-left text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                      <path d="M14 2v5h5" />
+                      <path d="M9 13h6M9 17h6M9 9h2" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 text-sm font-bold tracking-tight">Export DOCX</span>
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 
         {error && (
-          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm dark:bg-red-950 dark:text-red-200">
+          <div className="mx-4 mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm dark:bg-red-950 dark:text-red-200 sm:mx-5">
             {error}
           </div>
         )}
 
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
-            <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-900/40">
+        <div className="grid gap-0 px-0 py-0 lg:grid-cols-2">
+          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl border-l border-slate-200 bg-white p-0 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
+            <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-white shadow-sm dark:bg-zinc-900/40">
               <h2 className="bg-white/80 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:bg-zinc-900/80 dark:text-zinc-100">
                 File preview
               </h2>
@@ -275,8 +325,8 @@ export default function DocumentChatPage() {
                 {previewError && (
                   <p className="bg-red-50/80 p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
                 )}
-                {!previewLoading && !previewError && previewKind === "pdf" && fileBlobUrl && (
-                  <PdfLightPreview fileUrl={fileBlobUrl} />
+                {!previewLoading && !previewError && previewKind === "pdf" && pdfData && (
+                  <PdfLightPreview fileData={pdfData} />
                 )}
                 {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
                   <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-white/80 p-4 text-xs text-slate-800 dark:text-zinc-200">
@@ -336,65 +386,27 @@ export default function DocumentChatPage() {
             </div>
           </div>
 
-          <div className="order-1 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-2xl bg-white p-3 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1">
-            <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[220px_1fr]">
-              <aside className="flex h-full min-h-0 flex-col rounded-xl bg-white p-3 shadow-sm dark:bg-zinc-900/60">
-                <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Chat sessions</h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSessionId(null);
-                  }}
-                  className={`mb-2 w-full rounded-lg px-2 py-2 text-left text-sm transition ${
-                    sessionId === null
-                      ? "bg-[#0C2C55]/10 font-medium text-[#0C2C55] dark:bg-zinc-800 dark:text-zinc-100"
-                      : "hover:bg-slate-200 dark:hover:bg-zinc-900"
-                  }`}
-                >
-                  New thread
-                </button>
-                <div className="flex-1 space-y-2 overflow-y-auto pr-1">
-                  {sessions.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => {
-                        setExtraIds([]);
-                        setSessionId(s.id);
-                      }}
-                      className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
-                        sessionId === s.id
-                          ? "bg-[#0C2C55]/10 font-medium text-[#0C2C55] dark:bg-zinc-800 dark:text-zinc-100"
-                          : "hover:bg-slate-200 dark:hover:bg-zinc-900"
-                      }`}
-                    >
-                      <span className="line-clamp-2">{s.title}</span>
-                      <span className="mt-1 block text-xs text-slate-500">{new Date(s.created_at).toLocaleString()}</span>
-                    </button>
-                  ))}
-                </div>
-              </aside>
+          <div className="order-1 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col bg-white p-0 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1">
+            <ChatHeader
+              title="Ask QueryBot"
+              sessions={sessions}
+              sessionId={sessionId}
+              onSelectSession={(id) => { setExtraIds([]); setSessionId(id); }}
+              onNewChat={() => setSessionId(null)}
+            />
 
-              <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-white shadow-[0_10px_24px_rgba(12,44,85,0.14)] dark:bg-zinc-900/50">
-                <div className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-[#0C2C55]/[0.06] via-white to-slate-50/70 p-4 dark:from-zinc-900/60 dark:to-zinc-900/30">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-900/50">
+                <div className="flex-1 space-y-3 overflow-y-auto bg-slate-100 p-4 dark:bg-zinc-900/40">
                   {messages.length === 0 && (
                     <p className="text-sm text-slate-500">
-                      Ask a question about this document. Replies use RAG + Ollama (first reply can take a minute).
+                      Hi there! 👋 I’m here to help. Ask me anything about this document.
                     </p>
                   )}
                   {messages.map((m) => (
-                    <div
-                      key={m.id}
-                      className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-                        m.role === "user"
-                          ? "ml-auto rounded-tr-sm bg-[#0C2C55] text-white dark:bg-[#0C2C55]"
-                          : "rounded-tl-sm bg-slate-100 text-slate-900 dark:bg-zinc-800 dark:text-zinc-100"
-                      }`}
-                    >
-                      <div className="text-xs opacity-70">{m.role}</div>
-                      <div className="mt-1 whitespace-pre-wrap">{m.content}</div>
-                    </div>
+                    <MessageBubble key={m.id} message={m} onEdit={(text) => setInput(text)} />
                   ))}
+                  {thinking && <ThinkingBubble />}
                 </div>
                 {sessionId && (
                   <div className="bg-slate-50/80 px-4 py-2 dark:bg-zinc-900/60">
@@ -427,6 +439,14 @@ export default function DocumentChatPage() {
                     <textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          if (!sending && input.trim()) {
+                            e.currentTarget.form?.requestSubmit();
+                          }
+                        }
+                      }}
                       placeholder="Ask something about the document…"
                       rows={2}
                       className="flex-1 resize-none rounded-lg bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-0 dark:bg-zinc-950 dark:text-zinc-100"
@@ -446,5 +466,113 @@ export default function DocumentChatPage() {
         </div>
       </div>
     </RequireAuth>
+  );
+}
+
+/* ── Message bubble with action bar ───────────────────────── */
+function MessageBubble({
+  message,
+  onEdit,
+}: {
+  message: import("@/lib/api").ChatMessage;
+  onEdit: (text: string) => void;
+}) {
+  const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className={`group flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
+      <div
+        className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+          isUser
+            ? "rounded-tr-sm bg-[#0C2C55] text-white"
+            : "rounded-tl-sm bg-white text-slate-900 dark:bg-zinc-800 dark:text-zinc-100"
+        }`}
+      >
+        <div className="whitespace-pre-wrap">{message.content}</div>
+      </div>
+
+      {/* Action bar — always visible */}
+      <div
+        className={`flex items-center gap-0.5 ${
+          isUser ? "flex-row-reverse" : "flex-row"
+        }`}
+      >
+        {/* Copy */}
+        <button
+          type="button"
+          aria-label="Copy message"
+          onClick={handleCopy}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+        >
+          {copied ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 text-green-500">
+              <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" strokeLinecap="round" />
+            </svg>
+          )}
+        </button>
+
+        {/* Bookmark */}
+        <button
+          type="button"
+          aria-label={bookmarked ? "Remove bookmark" : "Bookmark message"}
+          onClick={() => setBookmarked((b) => !b)}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill={bookmarked ? "#0C2C55" : "none"}
+            stroke={bookmarked ? "#0C2C55" : "currentColor"}
+            strokeWidth="2"
+            className="h-3.5 w-3.5"
+          >
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        {/* Edit — user messages only */}
+        {isUser && (
+          <button
+            type="button"
+            aria-label="Edit message"
+            onClick={() => onEdit(message.content)}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ThinkingBubble() {
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div className="rounded-2xl rounded-tl-sm bg-white px-4 py-3 text-sm shadow-sm dark:bg-zinc-800">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:0ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]" />
+          <span className="ml-1 text-slate-500">Thinking…</span>
+        </div>
+      </div>
+    </div>
   );
 }
