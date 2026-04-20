@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.core.database import get_db
 from app.models.document import Document
 from app.models.user import User
 from app.schemas.chat import SummaryResponse
-from app.schemas.document import DocumentOut
+from app.schemas.document import DocumentOut, ReindexResponse
 from app.services.document_parser import extract_pages_from_file, extract_text_from_file
 from app.services import rag_service
 
@@ -175,6 +175,57 @@ async def get_document(
     return _document_to_out(doc)
 
 
+@router.get("/{document_id}/search")
+async def search_in_document_text(
+    document_id: uuid.UUID,
+    current: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    q: str = Query(..., min_length=1, description="Case-insensitive keyword to find in extracted text"),
+) -> dict:
+    """
+    Debug helper: confirm whether a keyword exists in stored extracted_text.
+    Returns small context snippets around matches.
+    """
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current.id)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    text = (doc.extracted_text or "").replace("\x00", "")
+    needle = q.strip()
+    if not needle:
+        raise HTTPException(status_code=400, detail="q must not be empty")
+
+    lower_text = text.lower()
+    lower_needle = needle.lower()
+    matches: list[int] = []
+    pos = 0
+    while True:
+        idx = lower_text.find(lower_needle, pos)
+        if idx == -1:
+            break
+        matches.append(idx)
+        pos = idx + max(len(lower_needle), 1)
+        if len(matches) >= 20:
+            break
+
+    snippets: list[str] = []
+    for idx in matches[:5]:
+        start = max(0, idx - 120)
+        end = min(len(text), idx + len(needle) + 120)
+        snippets.append(text[start:end].replace("\n", " ").strip())
+
+    return {
+        "document_id": str(doc.id),
+        "query": needle,
+        "found": bool(matches),
+        "match_count": len(matches),
+        "snippets": snippets,
+    }
+
+
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: uuid.UUID,
@@ -213,3 +264,39 @@ async def summarize_document(
         doc.extracted_text or "",
     )
     return SummaryResponse(document_id=doc.id, summary=summary)
+
+
+@router.post("/reindex", response_model=ReindexResponse)
+async def reindex_documents(
+    current: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ReindexResponse:
+    """
+    Rebuild vector index for all documents owned by the current user.
+    Useful after changing EMBEDDING_MODEL_ID or chunk settings.
+    """
+    result = await db.execute(select(Document).where(Document.user_id == current.id))
+    docs = result.scalars().all()
+    if not docs:
+        return ReindexResponse(total_documents=0, reindexed_documents=0)
+
+    reindexed = 0
+    for doc in docs:
+        try:
+            path = Path(doc.stored_path)
+            if path.is_file():
+                pages = extract_pages_from_file(path, doc.mime_type)
+            else:
+                pages = [(1, doc.extracted_text or "")]
+            await asyncio.to_thread(
+                rag_service.index_document,
+                current.id,
+                doc.id,
+                doc.original_filename,
+                pages,
+            )
+            reindexed += 1
+        except Exception:
+            logger.exception("Reindex failed for document %s", doc.id)
+
+    return ReindexResponse(total_documents=len(docs), reindexed_documents=reindexed)

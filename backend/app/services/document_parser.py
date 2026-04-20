@@ -10,6 +10,10 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Hybrid: merge PyMuPDF into OpenDataLoader when ODL looks light vs PyMuPDF or vs page count.
+_PYMUPDF_CHAR_RATIO = 1.3  # merge if len(pym) > len(odl) * this
+_ODL_MIN_LINES_PER_PAGE = 2.0  # merge if avg lines in ODL < pages * this and pym > odl
+
 _CONTENT_TYPES = frozenset(
     {
         "paragraph",
@@ -23,13 +27,23 @@ _CONTENT_TYPES = frozenset(
 
 
 def _extract_pdf_pymupdf(path: Path) -> list[tuple[int, str]]:
+    """
+    Plain PDF text via PyMuPDF (fallback / merge source for bullet lists).
+    sort=True stabilizes reading order.
+    """
     import fitz  # PyMuPDF
 
     doc = fitz.open(path)
     try:
         out: list[tuple[int, str]] = []
         for i, page in enumerate(doc, start=1):
-            t = page.get_text().strip()
+            t = ""
+            try:
+                t = page.get_text("text", sort=True).strip()
+            except TypeError:
+                t = page.get_text().strip()
+            if not t:
+                t = page.get_text().strip()
             if t:
                 out.append((i, t))
         return out
@@ -80,8 +94,6 @@ def _should_include(el: dict) -> bool:
 
 
 def _walk_elements(doc: dict) -> Iterable[dict]:
-    """Depth-first walk of `kids` trees, preserving sibling order."""
-
     def walk(node: dict) -> Iterable[dict]:
         for child in node.get("kids") or []:
             if not isinstance(child, dict):
@@ -135,6 +147,114 @@ def _extract_pdf_opendataloader(path: Path) -> list[tuple[int, str]]:
     return pages
 
 
+def _joined_pages(pages: list[tuple[int, str]]) -> str:
+    return "\n\n".join(t for _, t in pages if t).strip()
+
+
+def _density_merge_wanted(
+    odl_pages: list[tuple[int, str]],
+    pym_pages: list[tuple[int, str]],
+) -> bool:
+    """
+    Generic merge trigger: no document-specific keywords.
+    Merge when PyMuPDF has substantially more extracted text than OpenDataLoader,
+    or when ODL line density vs page count looks too sparse (likely dropped blocks).
+    """
+    joined_o = _joined_pages(odl_pages)
+    joined_p = _joined_pages(pym_pages)
+    len_o, len_p = len(joined_o), len(joined_p)
+    n_pages = max(len(odl_pages), len(pym_pages), 1)
+
+    if not joined_o.strip():
+        return bool(joined_p.strip())
+
+    # PyMuPDF extracts ~30%+ more characters → ODL likely incomplete for plain-text regions
+    if len_p > len_o * _PYMUPDF_CHAR_RATIO:
+        return True
+
+    # Very few lines relative to number of pages (ODL sparse vs layout)
+    line_count = joined_o.count("\n") + (1 if joined_o.strip() else 0)
+    if line_count < n_pages * _ODL_MIN_LINES_PER_PAGE and len_p > len_o:
+        return True
+
+    return False
+
+
+def _pages_to_dict(pages: list[tuple[int, str]]) -> dict[int, str]:
+    return {n: t for n, t in pages}
+
+
+def _merge_page_texts(odl: str, pym: str) -> str:
+    """Append PyMuPDF lines not already present in OpenDataLoader text (same page)."""
+    odl, pym = (odl or "").strip(), (pym or "").strip()
+    if not pym:
+        return odl
+    if not odl:
+        return pym
+    o_lower = odl.lower()
+    extra: list[str] = []
+    for line in pym.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        sl = s.lower()
+        if sl and sl not in o_lower:
+            extra.append(line)
+    if not extra:
+        return odl if len(odl) >= len(pym) else pym
+    return (odl + "\n" + "\n".join(extra)).strip()
+
+
+def _merge_pages_odl_pym(
+    odl_pages: list[tuple[int, str]],
+    pym_pages: list[tuple[int, str]],
+) -> list[tuple[int, str]]:
+    d_o = _pages_to_dict(odl_pages)
+    d_p = _pages_to_dict(pym_pages)
+    keys = sorted(set(d_o) | set(d_p))
+    out: list[tuple[int, str]] = []
+    for k in keys:
+        merged = _merge_page_texts(d_o.get(k, ""), d_p.get(k, ""))
+        if merged:
+            out.append((k, merged))
+    return out
+
+
+def _extract_pdf_hybrid(path: Path) -> list[tuple[int, str]]:
+    """
+    Primary: OpenDataLoader. If density check says PyMuPDF captured much more text
+    (or ODL is sparse vs page count), merge PyMuPDF plain text per page.
+    """
+    pym_pages = _extract_pdf_pymupdf(path)
+    try:
+        odl_pages = _extract_pdf_opendataloader(path)
+    except Exception as exc:
+        logger.warning(
+            "OpenDataLoader failed for %s (%s); using PyMuPDF only",
+            path.name,
+            exc,
+        )
+        return pym_pages
+
+    joined = _joined_pages(odl_pages)
+    if not joined.strip():
+        logger.warning("OpenDataLoader returned no text for %s; using PyMuPDF", path.name)
+        return pym_pages
+
+    if _density_merge_wanted(odl_pages, pym_pages):
+        logger.warning(
+            "OpenDataLoader vs PyMuPDF density check: merging PyMuPDF into ODL for %s "
+            "(ODL chars=%s, PyMuPDF chars=%s, pages=%s)",
+            path.name,
+            len(joined),
+            len(_joined_pages(pym_pages)),
+            max(len(odl_pages), len(pym_pages)),
+        )
+        return _merge_pages_odl_pym(odl_pages, pym_pages)
+
+    return odl_pages
+
+
 def extract_pages_from_file(path: Path, mime_type: str) -> list[tuple[int, str]]:
     """Return 1-based page index and text per page (single segment for txt/docx)."""
     mt = mime_type.lower()
@@ -146,18 +266,10 @@ def extract_pages_from_file(path: Path, mime_type: str) -> list[tuple[int, str]]
         mode = (settings.pdf_parser or "auto").strip().lower()
         if mode == "pymupdf":
             return _extract_pdf_pymupdf(path)
-        if mode == "opendataloader":
-            return _extract_pdf_opendataloader(path)
-        # auto
-        try:
-            return _extract_pdf_opendataloader(path)
-        except Exception as exc:
-            logger.warning(
-                "OpenDataLoader PDF parse failed (%s); falling back to PyMuPDF. "
-                "Install Java and set PATH if you want OpenDataLoader.",
-                exc,
-            )
-            return _extract_pdf_pymupdf(path)
+        if mode in ("auto", "hybrid", "opendataloader"):
+            return _extract_pdf_hybrid(path)
+        logger.warning("Unknown PDF_PARSER=%s; using hybrid", mode)
+        return _extract_pdf_hybrid(path)
     if (
         mt
         in (
