@@ -9,6 +9,17 @@ interface ChatHeaderProps {
   sessionId: string | null;
   onSelectSession: (id: string | null) => void;
   onNewChat: () => void;
+  onDeleteSession?: (id: string) => void;
+  onRenameSession?: (id: string, newTitle: string) => void;
+}
+
+function formatSessionDate(isoString: string) {
+  const date = new Date(isoString);
+  return (
+    date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) +
+    " • " +
+    date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+  );
 }
 
 export function ChatHeader({
@@ -17,21 +28,13 @@ export function ChatHeader({
   sessionId,
   onSelectSession,
   onNewChat,
+  onDeleteSession,
+  onRenameSession,
 }: ChatHeaderProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [favorites, setFavorites] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      const raw = localStorage.getItem("chat_favorites");
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
+  const [search, setSearch] = useState("");
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // Close sidebar on outside click
   useEffect(() => {
     if (!sidebarOpen) return;
     const handler = (e: MouseEvent) => {
@@ -43,7 +46,6 @@ export function ChatHeader({
     return () => document.removeEventListener("mousedown", handler);
   }, [sidebarOpen]);
 
-  // Close on Escape
   useEffect(() => {
     if (!sidebarOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -53,80 +55,29 @@ export function ChatHeader({
     return () => document.removeEventListener("keydown", handler);
   }, [sidebarOpen]);
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      try {
-        localStorage.setItem("chat_favorites", JSON.stringify(Array.from(next)));
-      } catch {}
-      return next;
-    });
-  };
-
-  const isFav = sessionId ? favorites.has(sessionId) : false;
-
-  const favSessions = sessions.filter((s) => favorites.has(s.id));
-  const otherSessions = sessions.filter((s) => !favorites.has(s.id));
+  const filteredSessions = search.trim()
+    ? sessions.filter((s) => s.title.toLowerCase().includes(search.trim().toLowerCase()))
+    : sessions;
 
   return (
     <>
       {/* ── Header bar ─────────────────────────────────────────── */}
       <header className="relative flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Left */}
-        <div className="flex items-center gap-1.5">
-          {/* Hamburger */}
-          <button
-            type="button"
-            aria-label="Open chat history"
-            onClick={() => setSidebarOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
-              <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-            </svg>
-          </button>
+        <button
+          type="button"
+          aria-label="Open chat history"
+          onClick={() => setSidebarOpen(true)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+          </svg>
+        </button>
 
-          {/* Bookmark/Star */}
-          <button
-            type="button"
-            aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
-            disabled={!sessionId}
-            onClick={() => sessionId && toggleFavorite(sessionId)}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
-              isFav
-                ? "text-amber-400 hover:text-amber-500"
-                : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            }`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill={isFav ? "currentColor" : "none"}
-              stroke="currentColor"
-              strokeWidth="2"
-              className="h-5 w-5"
-            >
-              <path
-                d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
-
-        {/* Center title */}
         <span className="pointer-events-none absolute inset-x-0 flex justify-center">
-          <span className="text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100">
-            {title}
-          </span>
+          <span className="text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100">{title}</span>
         </span>
 
-        {/* Right — new chat pencil */}
         <button
           type="button"
           aria-label="New chat"
@@ -134,16 +85,8 @@ export function ChatHeader({
           className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
-            <path
-              d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       </header>
@@ -152,7 +95,7 @@ export function ChatHeader({
       <div
         aria-hidden="true"
         onClick={() => setSidebarOpen(false)}
-        className={`fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] transition-opacity duration-300 dark:bg-black/40 ${
+        className={`fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px] transition-opacity duration-300 dark:bg-black/50 ${
           sidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
@@ -160,18 +103,19 @@ export function ChatHeader({
       {/* ── Slide-over sidebar ──────────────────────────────────── */}
       <div
         ref={sidebarRef}
-        className={`fixed bottom-0 left-0 top-0 z-50 flex w-72 flex-col bg-white shadow-xl transition-transform duration-300 ease-in-out dark:bg-zinc-900 ${
+        style={{ width: "270px" }}
+        className={`fixed bottom-0 left-0 top-0 z-50 flex flex-col bg-white shadow-2xl transition-transform duration-300 ease-in-out dark:bg-zinc-900 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Sidebar header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-zinc-800">
-          <span className="text-sm font-semibold text-slate-800 dark:text-zinc-100">Chat history</span>
+        <div className="flex h-14 shrink-0 items-center justify-between px-4">
+          <span className="text-[15px] font-semibold text-slate-800 dark:text-zinc-100">Chat History</span>
           <button
             type="button"
             aria-label="Close sidebar"
             onClick={() => setSidebarOpen(false)}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-800"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
               <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
@@ -179,79 +123,66 @@ export function ChatHeader({
           </button>
         </div>
 
-        {/* New thread button */}
-        <div className="shrink-0 px-3 pt-3">
+        {/* New Chat button */}
+        <div className="shrink-0 px-3 pb-3">
           <button
             type="button"
-            onClick={() => {
-              onSelectSession(null);
-              setSidebarOpen(false);
-            }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-[#0C2C55] transition hover:bg-[#0C2C55]/8 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            onClick={() => { onNewChat(); setSidebarOpen(false); }}
+            className="flex w-full items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#0C2C55]/10 text-[#0C2C55] dark:bg-zinc-800">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-3.5 w-3.5">
-                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-              </svg>
-            </span>
-            New thread
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-slate-500 dark:text-zinc-400">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            New Chat
           </button>
         </div>
 
+        {/* Search input */}
+        <div className="shrink-0 px-3 pb-2">
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
+              <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <circle cx="11" cy="11" r="8" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search chats…"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+            />
+          </div>
+        </div>
+
         {/* Sessions list */}
-        <div className="flex-1 overflow-y-auto px-3 pb-4 pt-2">
-          {/* Favorites */}
-          {favSessions.length > 0 && (
-            <div className="mb-3">
-              <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500">
-                Starred
+        <div className="flex-1 overflow-y-auto px-2 pb-4">
+          {filteredSessions.length > 0 && (
+            <>
+              <p className="mb-1 mt-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500">
+                Recents
               </p>
               <div className="space-y-0.5">
-                {favSessions.map((s) => (
+                {filteredSessions.map((s) => (
                   <SidebarItem
                     key={s.id}
                     session={s}
                     active={sessionId === s.id}
-                    isFav
-                    onSelect={() => {
-                      onSelectSession(s.id);
-                      setSidebarOpen(false);
-                    }}
-                    onToggleFav={() => toggleFavorite(s.id)}
+                    onSelect={() => { onSelectSession(s.id); setSidebarOpen(false); }}
+                    onDelete={onDeleteSession ? () => onDeleteSession(s.id) : undefined}
+                    onRename={onRenameSession ? (t) => onRenameSession(s.id, t) : undefined}
                   />
                 ))}
               </div>
-            </div>
+            </>
           )}
 
-          {/* All other sessions */}
-          {otherSessions.length > 0 && (
-            <div>
-              {favSessions.length > 0 && (
-                <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500">
-                  All chats
-                </p>
-              )}
-              <div className="space-y-0.5">
-                {otherSessions.map((s) => (
-                  <SidebarItem
-                    key={s.id}
-                    session={s}
-                    active={sessionId === s.id}
-                    isFav={false}
-                    onSelect={() => {
-                      onSelectSession(s.id);
-                      setSidebarOpen(false);
-                    }}
-                    onToggleFav={() => toggleFavorite(s.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {sessions.length === 0 && (
-            <p className="mt-6 text-center text-xs text-slate-400 dark:text-zinc-600">No chat history yet</p>
+          {filteredSessions.length === 0 && (
+            <p className="mt-8 text-center text-xs text-slate-400 dark:text-zinc-600">
+              {search.trim() ? "No chats match your search" : "No chat history yet"}
+            </p>
           )}
         </div>
       </div>
@@ -263,67 +194,154 @@ export function ChatHeader({
 interface SidebarItemProps {
   session: ChatSession;
   active: boolean;
-  isFav: boolean;
   onSelect: () => void;
-  onToggleFav: () => void;
+  onDelete?: () => void;
+  onRename?: (newTitle: string) => void;
 }
 
-function SidebarItem({ session, active, isFav, onSelect, onToggleFav }: SidebarItemProps) {
+function SidebarItem({ session, active, onSelect, onDelete, onRename }: SidebarItemProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (renaming) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renaming]);
+
+  const displayTitle = session.title.replace(/^Chat\s*[—-]\s*/i, "").trim() || session.title;
+
+  function startRename() {
+    setRenameValue(displayTitle);
+    setRenaming(true);
+    setMenuOpen(false);
+  }
+
+  function commitRename() {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== displayTitle && onRename) {
+      onRename(trimmed);
+    }
+    setRenaming(false);
+  }
+
+  if (renaming) {
+    return (
+      <div className="flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1.5 dark:bg-zinc-800">
+        <input
+          ref={renameInputRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+            if (e.key === "Escape") { e.preventDefault(); setRenaming(false); }
+          }}
+          onBlur={commitRename}
+          className="min-w-0 flex-1 rounded bg-white px-2 py-1 text-[13px] text-slate-800 outline-none ring-1 ring-[#0C2C55]/30 dark:bg-zinc-700 dark:text-zinc-100"
+        />
+        <button
+          type="button"
+          onClick={commitRename}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-green-600 transition hover:bg-green-50 dark:hover:bg-green-900/20"
+          aria-label="Save rename"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3.5 w-3.5">
+            <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRenaming(false)}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-200 dark:hover:bg-zinc-700"
+          aria-label="Cancel rename"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3.5 w-3.5">
+            <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`group flex items-center gap-1 rounded-lg transition ${
-        active ? "bg-[#0C2C55]/10 dark:bg-zinc-800" : "hover:bg-slate-100 dark:hover:bg-zinc-800/70"
+      className={`group relative flex items-center rounded-lg transition-colors duration-150 ${
+        active ? "bg-[#0C2C55]/10 dark:bg-zinc-800" : "hover:bg-slate-100 dark:hover:bg-zinc-800/60"
       }`}
     >
-      <button
-        type="button"
-        onClick={onSelect}
-        className="min-w-0 flex-1 px-3 py-2.5 text-left"
-      >
+      <button type="button" onClick={onSelect} className="min-w-0 flex-1 px-3 py-2 text-left">
         <span
-          className={`block truncate text-sm font-medium ${
+          className={`block truncate text-[13.5px] font-medium leading-snug ${
             active ? "text-[#0C2C55] dark:text-zinc-100" : "text-slate-700 dark:text-zinc-200"
           }`}
         >
-          {session.title}
+          {displayTitle}
         </span>
-        <span className="mt-0.5 block text-xs text-slate-400 dark:text-zinc-500">
-          {new Date(session.created_at).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
+        <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-zinc-500">
+          {formatSessionDate(session.created_at)}
         </span>
       </button>
 
-      {/* Star toggle inside item */}
-      <button
-        type="button"
-        aria-label={isFav ? "Unstar" : "Star"}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleFav();
-        }}
-        className={`mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${
-          isFav
-            ? "text-amber-400 hover:text-amber-500"
-            : "text-transparent group-hover:text-slate-300 hover:!text-amber-400 dark:group-hover:text-zinc-600"
-        }`}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill={isFav ? "currentColor" : "none"}
-          stroke="currentColor"
-          strokeWidth="2"
-          className="h-3.5 w-3.5"
+      {/* 3-dot menu */}
+      <div ref={menuRef} className="relative mr-1.5 shrink-0">
+        <button
+          type="button"
+          aria-label="More options"
+          onClick={(e) => { e.stopPropagation(); setMenuOpen((p) => !p); }}
+          className={`flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300 ${
+            menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
         >
-          <path
-            d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
+          <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+            <circle cx="5" cy="12" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="19" cy="12" r="1.5" />
+          </svg>
+        </button>
+
+        {menuOpen && (
+          <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); startRename(); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Rename
+            </button>
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+                  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Delete
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

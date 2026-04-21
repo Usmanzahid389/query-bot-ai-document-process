@@ -28,7 +28,10 @@ export default function DocumentChatPage() {
   const [allDocs, setAllDocs] = useState<Document[]>([]);
   const [extraIds, setExtraIds] = useState<string[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(`chat_session_${id}`) ?? null;
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
@@ -59,6 +62,7 @@ export default function DocumentChatPage() {
   const previewUrlRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const docPickerRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const documentIds = useMemo(() => {
     const set = new Set<string>([id, ...extraIds]);
@@ -93,6 +97,14 @@ export default function DocumentChatPage() {
       setDoc(d);
       setAllDocs(list.filter((x) => x.id !== id));
       setSessions(sess);
+      // Restore last session for this document if it still exists
+      const saved = localStorage.getItem(`chat_session_${id}`);
+      if (saved && sess.some((s) => s.id === saved)) {
+        setSessionId(saved);
+      } else {
+        localStorage.removeItem(`chat_session_${id}`);
+        setSessionId(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
       setDoc(null);
@@ -187,37 +199,55 @@ export default function DocumentChatPage() {
 
   useEffect(() => {
     if (!sessionId) {
+      localStorage.removeItem(`chat_session_${id}`);
       setMessages([]);
       setEditingMessageId(null);
       setEditingDraft("");
       return;
     }
+    localStorage.setItem(`chat_session_${id}`, sessionId);
     loadMessages(sessionId).catch((e) => setError(e instanceof Error ? e.message : "Failed to load messages"));
-  }, [sessionId]);
+  }, [sessionId, id]);
+
+  // Auto-scroll to bottom whenever messages list or thinking state changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, thinking]);
 
   async function onSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim()) return;
+    const text = input.trim();
+    if (!text) return;
+
+    // 1. Show user message instantly and clear input
+    const optimisticUserMsg: ChatMessage = {
+      id: `optimistic-${Date.now()}`,
+      role: "user",
+      content: text,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimisticUserMsg]);
+    setInput("");
     setSending(true);
     setThinking(true);
     setError(null);
+
     try {
       const body: {
         document_ids: string[];
         message: string;
         session_id?: string;
-      } = { document_ids: documentIds, message: input.trim() };
+      } = { document_ids: documentIds, message: text };
       if (sessionId) body.session_id = sessionId;
 
-      const [res] = await Promise.all([
-        api<ChatSendResponse>("/chat/messages", {
-          method: "POST",
-          body: JSON.stringify(body),
-        }),
-        new Promise((resolve) => window.setTimeout(resolve, 2000)),
-      ]);
+      const res = await api<ChatSendResponse>("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
       setThinking(false);
       setSessionId(res.session_id);
+      // Replace optimistic message list with authoritative messages from server
+      await loadMessages(res.session_id);
       setInput("");
       setMessages((prev) => {
         const dedup = new Set(prev.map((m) => m.id));
@@ -235,6 +265,8 @@ export default function DocumentChatPage() {
     } catch (err) {
       setThinking(false);
       setError(err instanceof Error ? err.message : "Send failed");
+      // Remove failed optimistic message
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticUserMsg.id));
     } finally {
       setSending(false);
     }
@@ -351,9 +383,9 @@ export default function DocumentChatPage() {
 
   return (
     <RequireAuth>
-      <div className="bg-slate-100 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
-        <div className="sticky top-[81px] z-30 w-full overflow-visible border-y border-slate-200/80 bg-white backdrop-blur-xl">
-          <div className="flex flex-col gap-4 px-4 py-3 sm:px-5 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex h-full flex-col overflow-hidden bg-slate-100 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
+        <div className="sticky top-0 z-30 w-full overflow-visible border-y border-slate-200/80 bg-white backdrop-blur-xl">
+          <div className="flex flex-col gap-2 px-4 py-3 sm:px-5 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0 flex-1">
               <button
                 type="button"
@@ -367,19 +399,26 @@ export default function DocumentChatPage() {
               </button>
             </div>
 
-            <div className="flex w-full flex-col gap-2.5 xl:w-auto xl:flex-row xl:items-center xl:justify-end">
-              <div ref={docPickerRef} className="relative">
+            <div className="flex w-full flex-col gap-1.5 xl:w-auto xl:flex-row xl:items-center xl:justify-end">
+              <div ref={docPickerRef} className="group/tip relative">
                 <button
                   type="button"
                   onClick={() => setShowDocPicker((prev) => !prev)}
-                  className="group inline-flex min-h-[52px] items-center rounded-2xl border border-[#0C2C55]/15 bg-slate-100 px-3.5 py-2.5 text-left text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+                  aria-label={`Select documents (${extraIds.length + 1} selected)`}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#0C2C55]/15 bg-slate-100 text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
                 >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 text-sm font-bold tracking-tight">
-                      Select multiple documents ({extraIds.length + 1})
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {extraIds.length > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#0C2C55] text-[9px] font-bold text-white">
+                      {extraIds.length + 1}
                     </span>
-                  </span>
+                  )}
                 </button>
+                <span className="pointer-events-none absolute -bottom-8 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded bg-[#0C2C55] px-2 py-1 text-[11px] text-white opacity-0 transition-opacity group-hover/tip:opacity-100">
+                  Select documents ({extraIds.length + 1})
+                </span>
 
                 {showDocPicker && (
                   <div className="absolute right-0 z-40 mt-2 w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-2xl">
@@ -422,69 +461,78 @@ export default function DocumentChatPage() {
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={onSummary}
-                disabled={summaryLoading}
-                className={`group inline-flex items-center rounded-2xl border px-3.5 py-2.5 text-left transition duration-200 ${
-                  summaryLoading
-                    ? "cursor-wait border-[#0C2C55]/20 bg-slate-100 text-[#0C2C55]"
-                    : "border-[#0C2C55]/15 bg-slate-100 text-[#0C2C55] hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
-                }`}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <div className="group/tip relative">
+                <button
+                  type="button"
+                  onClick={onSummary}
+                  disabled={summaryLoading}
+                  aria-label="Generate summary"
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition duration-200 ${
+                    summaryLoading
+                      ? "cursor-wait border-[#0C2C55]/20 bg-slate-100 text-[#0C2C55]"
+                      : "border-[#0C2C55]/15 bg-slate-100 text-[#0C2C55] hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+                  }`}
+                >
+                  {summaryLoading ? (
+                    <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M12 3l1.2 3.2L16.4 7.4l-3.2 1.2L12 11.8l-1.2-3.2L7.6 7.4l3.2-1.2L12 3Z" strokeLinecap="round" strokeLinejoin="round" />
                       <path d="M18.5 11.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8Z" strokeLinecap="round" strokeLinejoin="round" />
                       <path d="M6.5 13.5l.9 2.2 2.1.8-2.1.8-.9 2.2-.9-2.2-2.1-.8 2.1-.8.9-2.2Z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                  </span>
-                  <span className="min-w-0 text-sm font-bold tracking-tight">{summaryLoading ? "Generating..." : "Generate summary"}</span>
+                  )}
+                </button>
+                <span className="pointer-events-none absolute -bottom-8 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded bg-[#0C2C55] px-2 py-1 text-[11px] text-white opacity-0 transition-opacity group-hover/tip:opacity-100">
+                  {summaryLoading ? "Generating…" : "Generate summary"}
                 </span>
-              </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  downloadBlob(`/export/summary/${id}?format=pdf`, `summary-${id}.pdf`).catch((e) =>
-                    setError(e instanceof Error ? e.message : "Export failed")
-                  )
-                }
-                className="group inline-flex items-center rounded-2xl border border-[#0C2C55]/15 bg-slate-100 px-3.5 py-2.5 text-left text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 3v12" strokeLinecap="round" />
-                      <path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M5 21h14" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                  <span className="min-w-0 text-sm font-bold tracking-tight">Export PDF</span>
+              <div className="group/tip relative">
+                <button
+                  type="button"
+                  aria-label="Export as PDF"
+                  onClick={() =>
+                    downloadBlob(`/export/summary/${id}?format=pdf`, `summary-${id}.pdf`).catch((e) =>
+                      setError(e instanceof Error ? e.message : "Export failed")
+                    )
+                  }
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#0C2C55]/15 bg-slate-100 text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 3v12" strokeLinecap="round" />
+                    <path d="m7 10 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M5 21h14" strokeLinecap="round" />
+                  </svg>
+                </button>
+                <span className="pointer-events-none absolute -bottom-8 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded bg-[#0C2C55] px-2 py-1 text-[11px] text-white opacity-0 transition-opacity group-hover/tip:opacity-100">
+                  Export PDF
                 </span>
-              </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  downloadBlob(`/export/summary/${id}?format=docx`, `summary-${id}.docx`).catch((e) =>
-                    setError(e instanceof Error ? e.message : "Export failed")
-                  )
-                }
-                className="group inline-flex items-center rounded-2xl border border-[#0C2C55]/15 bg-slate-100 px-3.5 py-2.5 text-left text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
-                      <path d="M14 2v5h5" />
-                      <path d="M9 13h6M9 17h6M9 9h2" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                  <span className="min-w-0 text-sm font-bold tracking-tight">Export DOCX</span>
+              <div className="group/tip relative">
+                <button
+                  type="button"
+                  aria-label="Export as DOCX"
+                  onClick={() =>
+                    downloadBlob(`/export/summary/${id}?format=docx`, `summary-${id}.docx`).catch((e) =>
+                      setError(e instanceof Error ? e.message : "Export failed")
+                    )
+                  }
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#0C2C55]/15 bg-slate-100 text-[#0C2C55] transition duration-200 hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                    <path d="M14 2v5h5" />
+                    <path d="M9 13h6M9 17h6M9 9h2" strokeLinecap="round" />
+                  </svg>
+                </button>
+                <span className="pointer-events-none absolute -bottom-8 right-0 z-50 whitespace-nowrap rounded bg-[#0C2C55] px-2 py-1 text-[11px] text-white opacity-0 transition-opacity group-hover/tip:opacity-100">
+                  Export DOCX
                 </span>
-              </button>
+              </div>
             </div>
           </div>
         </div>
@@ -495,10 +543,10 @@ export default function DocumentChatPage() {
           </div>
         )}
 
-        <div className="grid gap-0 px-0 py-0 lg:grid-cols-2">
-          <div className="order-2 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col rounded-t-2xl border-l border-slate-200 bg-white p-0 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
+        <div className="grid flex-1 min-h-0 gap-0 px-0 py-0 lg:grid-cols-2">
+          <div className="order-2 flex h-full min-h-0 flex-col rounded-t-2xl border-l border-slate-200 bg-white p-0 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
             <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-white shadow-sm dark:bg-zinc-900/40">
-              <div className="flex items-center justify-between border-b border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-900 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-100">
+              <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white/90 px-4 text-sm font-semibold text-slate-900 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-100">
                 <div className="min-w-0 truncate text-center flex-1">
                   {selectedDocs.length > 1 && previewDoc
                     ? `${previewDocIndex + 1} of ${selectedDocs.length} files: ${previewDoc.original_filename}`
@@ -573,11 +621,21 @@ export default function DocumentChatPage() {
             </div>
           </div>
 
-          <div className="order-1 flex h-[88vh] min-h-[800px] max-h-[1080px] flex-col bg-white p-0 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1">
+          <div className="order-1 flex h-full min-h-0 flex-col bg-white p-0 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1">
             <ChatHeader
               title="Ask QueryBot"
               sessions={sessions}
               sessionId={sessionId}
+              onSelectSession={(id) => { setExtraIds([]); setSessionId(id); }}
+              onNewChat={() => setSessionId(null)}
+              onDeleteSession={(deletedId) => {
+                setSessions((prev) => prev.filter((s) => s.id !== deletedId));
+                if (sessionId === deletedId) { setSessionId(null); setMessages([]); }
+              }}
+              onRenameSession={(renamedId, newTitle) => {
+                setSessions((prev) =>
+                  prev.map((s) => s.id === renamedId ? { ...s, title: newTitle } : s)
+                );
               onSelectSession={(id) => {
                 setExtraIds([]);
                 setEditingMessageId(null);
@@ -622,6 +680,7 @@ export default function DocumentChatPage() {
                     />
                   ))}
                   {thinking && <ThinkingBubble />}
+                  <div ref={messagesEndRef} />
                 </div>
                 {sessionId && (
                   <div className="bg-slate-50/80 px-4 py-2 dark:bg-zinc-900/60">
