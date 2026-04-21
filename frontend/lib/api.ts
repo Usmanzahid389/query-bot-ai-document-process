@@ -143,4 +143,11 @@ export async function downloadBlob(pathWithQuery: string, filename: string): Pro
   URL.revokeObjectURL(url);
 }
 
+export async function editChatMessage(messageId: string, message: string): Promise<ChatSendResponse> {
+  return api<ChatSendResponse>(`/chat/messages/${encodeURIComponent(messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ message }),
+  });
+}
+
 export { API };

@@ -9,6 +9,7 @@ import { ChatHeader } from "@/components/ChatHeader";
 import {
   api,
   downloadBlob,
+  editChatMessage,
   fetchDocumentFile,
   type CitationSource,
   type ChatMessage,
@@ -29,6 +30,9 @@ export default function DocumentChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
+  const [editedMessageIds, setEditedMessageIds] = useState<Set<string>>(new Set());
   const [input, setInput] = useState("");
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +188,8 @@ export default function DocumentChatPage() {
   useEffect(() => {
     if (!sessionId) {
       setMessages([]);
+      setEditingMessageId(null);
+      setEditingDraft("");
       return;
     }
     loadMessages(sessionId).catch((e) => setError(e instanceof Error ? e.message : "Failed to load messages"));
@@ -234,6 +240,36 @@ export default function DocumentChatPage() {
     }
   }
 
+  async function onSaveInlineEdit(messageId: string) {
+    if (!editingDraft.trim()) return;
+    setSending(true);
+    setThinking(true);
+    setError(null);
+    try {
+      const [res] = await Promise.all([
+        editChatMessage(messageId, editingDraft.trim()),
+        new Promise((resolve) => window.setTimeout(resolve, 1200)),
+      ]);
+      setThinking(false);
+      setSessionId(res.session_id);
+      setEditingMessageId(null);
+      setEditingDraft("");
+      setEditedMessageIds((prev) => new Set(prev).add(res.user_message.id));
+      setMessageSources((prev) => ({
+        ...prev,
+        [res.assistant_message.id]: Array.isArray(res.assistant_sources) ? res.assistant_sources : [],
+      }));
+      await loadMessages(res.session_id);
+      const sess = await api<ChatSession[]>(`/chat/sessions?document_id=${encodeURIComponent(id)}`);
+      setSessions(sess);
+    } catch (err) {
+      setThinking(false);
+      setError(err instanceof Error ? err.message : "Edit failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function onSummary() {
     setError(null);
     setSummaryLoading(true);
@@ -255,12 +291,16 @@ export default function DocumentChatPage() {
       setSessionId(null);
       setMessages([]);
     }
+    setEditingMessageId(null);
+    setEditingDraft("");
     setExtraIds((prev) => (prev.includes(docId) ? prev.filter((x) => x !== docId) : [...prev, docId]));
   }
 
   function onUseSelectedDocuments() {
     setSessionId(null);
     setMessages([]);
+    setEditingMessageId(null);
+    setEditingDraft("");
     setShowDocPicker(false);
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }
@@ -538,8 +578,17 @@ export default function DocumentChatPage() {
               title="Ask QueryBot"
               sessions={sessions}
               sessionId={sessionId}
-              onSelectSession={(id) => { setExtraIds([]); setSessionId(id); }}
-              onNewChat={() => setSessionId(null)}
+              onSelectSession={(id) => {
+                setExtraIds([]);
+                setEditingMessageId(null);
+                setEditingDraft("");
+                setSessionId(id);
+              }}
+              onNewChat={() => {
+                setEditingMessageId(null);
+                setEditingDraft("");
+                setSessionId(null);
+              }}
             />
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -556,7 +605,20 @@ export default function DocumentChatPage() {
                       message={m}
                       sources={messageSources[m.id] ?? []}
                       onCitationClick={handleCitationClick}
-                      onEdit={(text) => setInput(text)}
+                      isEditing={editingMessageId === m.id}
+                      isEdited={editedMessageIds.has(m.id)}
+                      editingDraft={editingDraft}
+                      editSaving={sending}
+                      onEdit={(msg) => {
+                        setEditingMessageId(msg.id);
+                        setEditingDraft(msg.content);
+                      }}
+                      onEditingDraftChange={setEditingDraft}
+                      onSaveEdit={() => onSaveInlineEdit(m.id)}
+                      onCancelEdit={() => {
+                        setEditingMessageId(null);
+                        setEditingDraft("");
+                      }}
                     />
                   ))}
                   {thinking && <ThinkingBubble />}
@@ -628,12 +690,26 @@ function MessageBubble({
   message,
   sources,
   onCitationClick,
+  isEditing,
+  isEdited,
+  editingDraft,
+  editSaving,
   onEdit,
+  onEditingDraftChange,
+  onSaveEdit,
+  onCancelEdit,
 }: {
   message: import("@/lib/api").ChatMessage;
   sources: CitationSource[];
   onCitationClick: (citation: { pageNumber: number; snippet: string }) => void;
-  onEdit: (text: string) => void;
+  isEditing: boolean;
+  isEdited: boolean;
+  editingDraft: string;
+  editSaving: boolean;
+  onEdit: (message: import("@/lib/api").ChatMessage) => void;
+  onEditingDraftChange: (value: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -652,48 +728,83 @@ function MessageBubble({
   return (
     <div className={`group flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
       <div
-        className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-          isUser
-            ? "rounded-tr-sm bg-[#0C2C55] text-white"
-            : "rounded-tl-sm bg-white text-slate-900 dark:bg-zinc-800 dark:text-zinc-100"
-        }`}
+        className={
+          isUser && isEditing
+            ? "w-full max-w-[38rem] text-sm"
+            : `max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ${
+                isUser
+                  ? "rounded-tr-sm bg-[#0C2C55] text-white ring-[#0C2C55]/30"
+                  : "rounded-tl-sm bg-white text-slate-900 ring-slate-200 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700"
+              }`
+        }
       >
-        <div className="whitespace-pre-wrap break-words">
-          {parts.map((part, idx) => {
-            const match = citationRegex.exec(part);
-            if (!match) return <span key={`${message.id}-txt-${idx}`}>{part}</span>;
-            const citationIndex = Number(match[1]);
-            const source = sources.find((item) => item.index === citationIndex);
-            if (!source || !source.page_number) {
-              return (
-                <span key={`${message.id}-cit-${idx}`} className="text-slate-400">
-                  {part}
-                </span>
-              );
-            }
-            return (
+        {isEditing && isUser ? (
+          <div className="space-y-2">
+            <textarea
+              value={editingDraft}
+              onChange={(e) => onEditingDraftChange(e.target.value)}
+              rows={3}
+              className="w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+            />
+            <div className="flex justify-end gap-2">
               <button
-                key={`${message.id}-cit-${idx}`}
                 type="button"
-                onClick={() =>
-                  onCitationClick({
-                    pageNumber: source.page_number as number,
-                    snippet: source.content || "",
-                  })
-                }
-                title={`Go to page ${source.page_number}${source.file_name ? ` • ${source.file_name}` : ""}`}
-                className={`mx-0.5 inline-flex items-center rounded-md border px-1.5 py-0 text-[11px] transition ${
-                  isUser
-                    ? "border-blue-200/40 bg-blue-100/20 text-blue-50 hover:bg-blue-100/35"
-                    : "border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300 hover:bg-blue-100"
-                }`}
+                onClick={onCancelEdit}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
               >
-                {part}
+                Cancel
               </button>
-            );
-          })}
-        </div>
+              <button
+                type="button"
+                disabled={editSaving || !editingDraft.trim()}
+                onClick={onSaveEdit}
+                className="rounded-xl bg-[#0C2C55] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#10386a] disabled:opacity-60"
+              >
+                {editSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="whitespace-pre-wrap break-words">
+            {parts.map((part, idx) => {
+              const match = citationRegex.exec(part);
+              if (!match) return <span key={`${message.id}-txt-${idx}`}>{part}</span>;
+              const citationIndex = Number(match[1]);
+              const source = sources.find((item) => item.index === citationIndex);
+              if (!source || !source.page_number) {
+                return (
+                  <span key={`${message.id}-cit-${idx}`} className="text-slate-400">
+                    {part}
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={`${message.id}-cit-${idx}`}
+                  type="button"
+                  onClick={() =>
+                    onCitationClick({
+                      pageNumber: source.page_number as number,
+                      snippet: source.content || "",
+                    })
+                  }
+                  title={`Go to page ${source.page_number}${source.file_name ? ` • ${source.file_name}` : ""}`}
+                  className={`mx-0.5 inline-flex items-center rounded-md border px-1.5 py-0 text-[11px] transition ${
+                    isUser
+                      ? "border-blue-200/40 bg-blue-100/20 text-blue-50 hover:bg-blue-100/35"
+                      : "border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300 hover:bg-blue-100"
+                  }`}
+                >
+                  {part}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+      {isEdited && isUser && (
+        <div className="px-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">edited</div>
+      )}
 
       {/* Action bar — always visible */}
       <div
@@ -743,8 +854,12 @@ function MessageBubble({
           <button
             type="button"
             aria-label="Edit message"
-            onClick={() => onEdit(message.content)}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            onClick={() => onEdit(message)}
+            className={`flex h-6 w-6 items-center justify-center rounded-md transition ${
+              isEditing
+                ? "bg-[#0C2C55]/10 text-[#0C2C55]"
+                : "text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            }`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" strokeLinejoin="round" />
