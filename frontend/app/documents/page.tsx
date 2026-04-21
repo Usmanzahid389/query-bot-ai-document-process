@@ -16,6 +16,8 @@ export default function DocumentsPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [drag, setDrag] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -86,15 +88,22 @@ export default function DocumentsPage() {
     e.target.value = "";
   }
 
-  async function deleteDocument(document: Document) {
-    const ok = window.confirm(`Delete "${document.original_filename}"? This cannot be undone.`);
-    if (!ok) return;
+  function requestDeleteDocument(document: Document) {
+    setDeleteTarget(document);
+  }
+
+  async function confirmDeleteDocument() {
+    if (!deleteTarget) return;
     setError(null);
+    setDeletingId(deleteTarget.id);
     try {
-      await api<void>(`/documents/${document.id}`, { method: "DELETE" });
+      await api<void>(`/documents/${deleteTarget.id}`, { method: "DELETE" });
       await load();
+      setDeleteTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -331,10 +340,11 @@ export default function DocumentsPage() {
                               </Link>
                               <button
                                 type="button"
-                                onClick={() => void deleteDocument(d)}
+                                onClick={() => requestDeleteDocument(d)}
                                 aria-label={`Delete ${d.original_filename}`}
                                 title="Delete document"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-black transition hover:border-black hover:bg-slate-50"
+                                disabled={deletingId === d.id}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-black transition hover:border-black hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <path d="M3 6h18" strokeLinecap="round" />
@@ -355,6 +365,36 @@ export default function DocumentsPage() {
           </div>
         </main>
       </div>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">Delete document?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              This will permanently remove{" "}
+              <span className="font-semibold text-slate-900">{deleteTarget.original_filename}</span>.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deletingId === deleteTarget.id}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteDocument()}
+                disabled={deletingId === deleteTarget.id}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingId === deleteTarget.id ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </RequireAuth>
   );
 }
