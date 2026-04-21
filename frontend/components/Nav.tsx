@@ -34,7 +34,7 @@ export function Nav() {
   const navLinkClass = (href: string) => {
     const isActive = pathname === href;
     return [
-      "inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-semibold leading-none transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0C2C55]/30",
+      "inline-flex h-8 items-center justify-center rounded-xl px-4 text-sm font-semibold leading-none transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0C2C55]/30",
       isActive
         ? "bg-[#0C2C55]/12 text-[#0C2C55] shadow-sm"
         : "text-zinc-700 hover:bg-[#0C2C55]/10 hover:text-[#0C2C55] active:bg-[#0C2C55]/15 active:scale-[0.98] dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100",
@@ -149,21 +149,21 @@ export function Nav() {
 
   function displayName(email: string | undefined): string {
     if (!email) return "User";
-    const local = email.split("@")[0] ?? "user";
-    return local.charAt(0).toUpperCase() + local.slice(1);
+    const local = (email.split("@")[0] ?? "user").replace(/[^a-zA-Z\s]/g, "");
+    return local.charAt(0).toUpperCase() + local.slice(1) || "User";
   }
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90">
-      <div className="mx-auto flex max-w-[90rem] flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-6 lg:px-4 xl:px-6">
+      <div className="mx-auto flex max-w-[90rem] flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6 lg:px-4 xl:px-6">
         <Link href="/" className="group inline-flex items-center gap-3">
-          <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-white shadow-md ring-1 ring-[#0C2C55]/20 transition duration-200 group-hover:scale-105 group-hover:shadow-lg">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+          <span className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-white shadow-md ring-1 ring-[#0C2C55]/20 transition duration-200 group-hover:scale-105 group-hover:shadow-lg">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M10.5 17a6.5 6.5 0 1 1 4.6-11.1A6.5 6.5 0 0 1 17 10.5c0 3.6-2.9 6.5-6.5 6.5Z" />
               <path d="m16.3 16.3 3.2 3.2" />
             </svg>
           </span>
-          <span className="bg-gradient-to-r from-[#0C2C55] to-[#10386a] bg-clip-text text-xl font-extrabold tracking-tight text-transparent transition group-hover:brightness-110">
+          <span className="bg-gradient-to-r from-[#0C2C55] to-[#10386a] bg-clip-text text-[17px] font-extrabold tracking-tight text-transparent transition group-hover:brightness-110">
             QueryBot
           </span>
         </Link>
@@ -183,18 +183,15 @@ export function Nav() {
                 onFocus={() => setShowSearchDropdown(true)}
                 onChange={(e) => setDocumentsSearch(e.target.value)}
                 placeholder="Search documents..."
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-20 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 transition-colors focus:border-slate-300 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-11 pr-4 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 transition-colors focus:border-slate-300 focus:outline-none"
               />
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline-flex">
-                ⌘ K
-              </span>
 
               {searchQuery && (
                 <button
                   type="button"
                   onClick={clearDocumentsSearch}
                   aria-label="Clear search"
-                  className="absolute right-12 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 sm:right-16"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                 >
                   <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M18 6 6 18M6 6l12 12" />
@@ -203,7 +200,7 @@ export function Nav() {
               )}
 
               {showSearchDropdown && searchQuery && (
-                <div className="absolute left-0 right-0 z-30 mt-2 rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                <div className="absolute left-0 right-0 z-30 mt-2 rounded-lg border border-slate-200 bg-white shadow-2xl">
                   <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
                     <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Results</span>
                     <span className="rounded-full bg-[#0C2C55]/10 px-2 py-0.5 text-[10px] font-bold text-[#0C2C55]">
@@ -262,18 +259,12 @@ export function Nav() {
               <button
                 type="button"
                 onClick={() => setShowProfileMenu((prev) => !prev)}
-                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0C2C55]/30"
+                className="flex items-center gap-2 px-1 py-1 text-left transition focus-visible:outline-none"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-xs font-bold text-white shadow-sm">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-xs font-bold text-white shadow-sm">
                   {displayName(me?.email).charAt(0)}
                 </div>
-                <div className="min-w-0 text-left">
-                  <p className="truncate text-sm font-semibold text-slate-900">{displayName(me?.email)}</p>
-                  <p className="truncate text-xs text-slate-400">{me?.email ?? "Signed in"}</p>
-                </div>
-                <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 5v.01M12 12v.01M12 19v.01" strokeLinecap="round" />
-                </svg>
+                <p className="truncate text-base font-semibold text-slate-900">{displayName(me?.email)}</p>
               </button>
 
               {showProfileMenu && (
@@ -307,7 +298,7 @@ export function Nav() {
                 Log in
               </Link>
               <Link
-                className="inline-flex h-10 items-center justify-center rounded-xl bg-gradient-to-r from-[#0C2C55] to-[#10386a] px-5 text-sm font-semibold leading-none text-white shadow-sm transition duration-200 hover:shadow-md hover:brightness-110 active:bg-[#0A2344] active:brightness-100 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0C2C55]/30"
+                className="inline-flex h-8 items-center justify-center rounded-xl bg-gradient-to-r from-[#0C2C55] to-[#10386a] px-4 text-sm font-semibold leading-none text-white shadow-sm transition duration-200 hover:shadow-md hover:brightness-110 active:bg-[#0A2344] active:brightness-100 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0C2C55]/30"
                 href="/register"
               >
                 Register
