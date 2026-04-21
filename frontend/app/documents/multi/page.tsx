@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChatHeader } from "@/components/ChatHeader";
 import { RequireAuth } from "@/components/RequireAuth";
-import { api, type ChatMessage, type ChatSendResponse, type ChatSession, type Document } from "@/lib/api";
+import { api, editChatMessage, type ChatMessage, type ChatSendResponse, type ChatSession, type Document } from "@/lib/api";
 
 export default function MultiDocumentChatPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -12,6 +12,9 @@ export default function MultiDocumentChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
+  const [editedMessageIds, setEditedMessageIds] = useState<Set<string>>(new Set());
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -63,6 +66,8 @@ export default function MultiDocumentChatPage() {
   useEffect(() => {
     if (!sessionId) {
       setMessages([]);
+      setEditingMessageId(null);
+      setEditingDraft("");
       return;
     }
     loadMessages(sessionId).catch((e) => setError(e instanceof Error ? e.message : "Failed to load messages"));
@@ -82,6 +87,8 @@ export default function MultiDocumentChatPage() {
       setSessionId(null);
       setMessages([]);
     }
+    setEditingMessageId(null);
+    setEditingDraft("");
     setSelectedIds((prev) => (prev.includes(documentId) ? prev.filter((id) => id !== documentId) : [...prev, documentId]));
   }
 
@@ -121,6 +128,32 @@ export default function MultiDocumentChatPage() {
     } catch (e) {
       setThinking(false);
       setError(e instanceof Error ? e.message : "Send failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function onSaveInlineEdit(messageId: string) {
+    if (!editingDraft.trim()) return;
+    setSending(true);
+    setThinking(true);
+    setError(null);
+    try {
+      const [res] = await Promise.all([
+        editChatMessage(messageId, editingDraft.trim()),
+        new Promise((resolve) => window.setTimeout(resolve, 1200)),
+      ]);
+      setThinking(false);
+      setSessionId(res.session_id);
+      setEditingMessageId(null);
+      setEditingDraft("");
+      setEditedMessageIds((prev) => new Set(prev).add(res.user_message.id));
+      await loadMessages(res.session_id);
+      const allSessions = await api<ChatSession[]>("/chat/sessions");
+      setSessions(allSessions);
+    } catch (e) {
+      setThinking(false);
+      setError(e instanceof Error ? e.message : "Edit failed");
     } finally {
       setSending(false);
     }
@@ -196,8 +229,14 @@ export default function MultiDocumentChatPage() {
                 title="Ask QueryBot"
                 sessions={matchingSessions}
                 sessionId={sessionId}
-                onSelectSession={(id) => setSessionId(id)}
+                onSelectSession={(id) => {
+                  setEditingMessageId(null);
+                  setEditingDraft("");
+                  setSessionId(id);
+                }}
                 onNewChat={() => {
+                  setEditingMessageId(null);
+                  setEditingDraft("");
                   setSessionId(null);
                   setMessages([]);
                 }}
@@ -212,7 +251,24 @@ export default function MultiDocumentChatPage() {
                   )}
 
                   {messages.map((message) => (
-                    <MessageBubble key={message.id} message={message} onEdit={(text) => setInput(text)} />
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      isEditing={editingMessageId === message.id}
+                      isEdited={editedMessageIds.has(message.id)}
+                      editingDraft={editingDraft}
+                      editSaving={sending}
+                      onEdit={(msg) => {
+                        setEditingMessageId(msg.id);
+                        setEditingDraft(msg.content);
+                      }}
+                      onEditingDraftChange={setEditingDraft}
+                      onSaveEdit={() => onSaveInlineEdit(message.id)}
+                      onCancelEdit={() => {
+                        setEditingMessageId(null);
+                        setEditingDraft("");
+                      }}
+                    />
                   ))}
 
                   {thinking && <ThinkingBubble />}
@@ -274,10 +330,24 @@ function ThinkingBubble() {
 
 function MessageBubble({
   message,
+  isEditing,
+  isEdited,
+  editingDraft,
+  editSaving,
   onEdit,
+  onEditingDraftChange,
+  onSaveEdit,
+  onCancelEdit,
 }: {
   message: ChatMessage;
-  onEdit: (text: string) => void;
+  isEditing: boolean;
+  isEdited: boolean;
+  editingDraft: string;
+  editSaving: boolean;
+  onEdit: (message: ChatMessage) => void;
+  onEditingDraftChange: (value: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -293,14 +363,49 @@ function MessageBubble({
   return (
     <div className={`group flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
       <div
-        className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-          isUser
-            ? "rounded-tr-sm bg-[#0C2C55] text-white"
-            : "rounded-tl-sm bg-white text-slate-900 dark:bg-zinc-800 dark:text-zinc-100"
-        }`}
+        className={
+          isUser && isEditing
+            ? "w-full max-w-[38rem] text-sm"
+            : `max-w-[90%] rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ${
+                isUser
+                  ? "rounded-tr-sm bg-[#0C2C55] text-white ring-[#0C2C55]/30"
+                  : "rounded-tl-sm bg-white text-slate-900 ring-slate-200 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700"
+              }`
+        }
       >
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        {isEditing && isUser ? (
+          <div className="space-y-2">
+            <textarea
+              value={editingDraft}
+              onChange={(e) => onEditingDraftChange(e.target.value)}
+              rows={3}
+              className="w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={editSaving || !editingDraft.trim()}
+                onClick={onSaveEdit}
+                className="rounded-xl bg-[#0C2C55] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#10386a] disabled:opacity-60"
+              >
+                {editSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        )}
       </div>
+      {isEdited && isUser && (
+        <div className="px-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">edited</div>
+      )}
 
       <div
         className={`flex items-center gap-0.5 ${
@@ -346,8 +451,12 @@ function MessageBubble({
           <button
             type="button"
             aria-label="Edit message"
-            onClick={() => onEdit(message.content)}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            onClick={() => onEdit(message)}
+            className={`flex h-6 w-6 items-center justify-center rounded-md transition ${
+              isEditing
+                ? "bg-[#0C2C55]/10 text-[#0C2C55]"
+                : "text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            }`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" strokeLinejoin="round" />

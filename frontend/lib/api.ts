@@ -30,6 +30,13 @@ export type ChatMessage = {
   created_at: string;
 };
 
+export type CitationSource = {
+  index: number;
+  page_number: number | null;
+  file_name: string | null;
+  content: string;
+};
+
 export type ChatSession = {
   id: string;
   title: string;
@@ -41,6 +48,7 @@ export type ChatSendResponse = {
   session_id: string;
   user_message: ChatMessage;
   assistant_message: ChatMessage;
+  assistant_sources: CitationSource[];
 };
 
 export type SummaryResponse = { document_id: string; summary: string };
@@ -65,14 +73,49 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
 }
 
 export async function uploadDocument(file: File): Promise<Document> {
+  return uploadDocumentWithProgress(file);
+}
+
+export async function uploadDocumentWithProgress(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<Document> {
   const token = getToken();
   const form = new FormData();
   form.append("file", file);
-  const headers = new Headers();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(`${API}/documents/upload`, { method: "POST", body: form, headers });
-  if (!res.ok) throw new Error(await parseError(res));
-  return res.json();
+  return new Promise<Document>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API}/documents/upload`);
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (!onProgress) return;
+      if (!event.lengthComputable) return;
+      const pct = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      onProgress(pct);
+    };
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText) as Document;
+          if (onProgress) onProgress(100);
+          resolve(data);
+        } catch {
+          reject(new Error("Invalid upload response"));
+        }
+        return;
+      }
+      try {
+        const parsed = JSON.parse(xhr.responseText) as { detail?: string };
+        reject(new Error(parsed?.detail || xhr.statusText || "Upload failed"));
+      } catch {
+        reject(new Error(xhr.statusText || "Upload failed"));
+      }
+    };
+    xhr.send(form);
+  });
 }
 
 /** Fetch raw file bytes (auth). Use createObjectURL for PDF preview in iframe. */
@@ -98,6 +141,13 @@ export async function downloadBlob(pathWithQuery: string, filename: string): Pro
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export async function editChatMessage(messageId: string, message: string): Promise<ChatSendResponse> {
+  return api<ChatSendResponse>(`/chat/messages/${encodeURIComponent(messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ message }),
+  });
 }
 
 export { API };

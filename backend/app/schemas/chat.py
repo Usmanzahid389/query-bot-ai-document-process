@@ -50,6 +50,10 @@ class SendMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=16000)
 
 
+class EditMessageRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=16000)
+
+
 class SummaryResponse(BaseModel):
     document_id: UUID
     summary: str
@@ -59,3 +63,4 @@ class ChatSendResponse(BaseModel):
     session_id: UUID
     user_message: ChatMessageOut
     assistant_message: ChatMessageOut
+    assistant_sources: list[dict[str, Any]] = Field(default_factory=list)
