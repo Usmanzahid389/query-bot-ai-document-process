@@ -165,8 +165,9 @@ async def send_message(
         )
         for d in docs
     ]
+    sources: list[dict[str, object]] = []
     try:
-        answer = await asyncio.to_thread(
+        rag_result = await asyncio.to_thread(
             rag_service.answer_question,
             current.id,
             doc_snapshots,
@@ -180,6 +181,14 @@ async def send_message(
             "If you use Groq, model IDs look like 'llama-3.3-70b-versatile', not OpenRouter slugs. "
             "See the API terminal log for details."
         )
+    else:
+        if isinstance(rag_result, dict):
+            answer = rag_result.get("answer", "")
+            raw_sources = rag_result.get("sources", [])
+            if isinstance(raw_sources, list):
+                sources = [s for s in raw_sources if isinstance(s, dict)]
+        else:
+            answer = rag_result
     if not isinstance(answer, str):
         answer = str(answer) if answer is not None else ""
     answer = answer.replace("\x00", "")
@@ -203,4 +212,5 @@ async def send_message(
             content=assistant_msg.content,
             created_at=assistant_msg.created_at,
         ),
+        assistant_sources=sources,
     )

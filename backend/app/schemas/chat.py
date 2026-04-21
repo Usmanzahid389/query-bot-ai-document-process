@@ -59,3 +59,4 @@ class ChatSendResponse(BaseModel):
     session_id: UUID
     user_message: ChatMessageOut
     assistant_message: ChatMessageOut
+    assistant_sources: list[dict[str, Any]] = Field(default_factory=list)

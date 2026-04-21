@@ -30,6 +30,13 @@ export type ChatMessage = {
   created_at: string;
 };
 
+export type CitationSource = {
+  index: number;
+  page_number: number | null;
+  file_name: string | null;
+  content: string;
+};
+
 export type ChatSession = {
   id: string;
   title: string;
@@ -41,6 +48,7 @@ export type ChatSendResponse = {
   session_id: string;
   user_message: ChatMessage;
   assistant_message: ChatMessage;
+  assistant_sources: CitationSource[];
 };
 
 export type SummaryResponse = { document_id: string; summary: string };

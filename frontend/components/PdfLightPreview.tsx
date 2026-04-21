@@ -45,18 +45,201 @@ export function PdfPreviewSkeleton({ pageWidth }: { pageWidth?: number }) {
 type Props = {
   fileData: Uint8Array;
   showToolbar?: boolean;
+  activeCitation?: { pageNumber: number; snippet: string; timestamp: number } | null;
 };
 
-export function PdfLightPreview({ fileData, showToolbar = true }: Props) {
+export function PdfLightPreview({ fileData, showToolbar = true, activeCitation = null }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
   const [docError, setDocError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   /** Overlay stays until first canvas page paints — avoids skeleton→PDF flicker. */
   const [skeletonOverlay, setSkeletonOverlay] = useState(true);
   const firstPagePainted = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [baseWidth, setBaseWidth] = useState(640);
   const pdfFile = useRef<{ data: Uint8Array } | null>(null);
+  const pendingCitationRef = useRef<{ pageNumber: number; snippet: string; timestamp: number } | null>(null);
+  const searchPluginInstance = useRef<{ highlight: (snippet: string, pageEl: HTMLElement) => boolean } | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
+  const textLayerObserverRef = useRef<MutationObserver | null>(null);
+
+  const normalizeForSearch = useCallback((value: string) => {
+    return (value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }, []);
+
+  const clearAllHighlights = useCallback(() => {
+    const highlighted = Array.from(document.querySelectorAll<HTMLSpanElement>(".qb-citation-highlight"));
+    highlighted.forEach((span) => {
+      span.classList.remove("qb-citation-highlight");
+      span.style.backgroundColor = "";
+      span.style.borderRadius = "";
+      span.style.padding = "";
+    });
+  }, []);
+
+  const clearPageHighlights = useCallback((pageEl: HTMLElement) => {
+    const spans = Array.from(pageEl.querySelectorAll<HTMLSpanElement>(".react-pdf__Page__textContent span"));
+    spans.forEach((span) => {
+      span.classList.remove("qb-citation-highlight");
+      span.style.backgroundColor = "";
+      span.style.borderRadius = "";
+      span.style.padding = "";
+    });
+  }, []);
+
+  const applyFuzzyHighlight = useCallback(
+    (rawSnippet: string, pageEl: HTMLElement) => {
+      clearAllHighlights();
+      clearPageHighlights(pageEl);
+      const spans = Array.from(pageEl.querySelectorAll<HTMLSpanElement>(".react-pdf__Page__textContent span"));
+      if (!spans.length) return false;
+
+      const normalizeWithSpaces = (value: string) =>
+        (value || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      const normalizedSnippet = normalizeWithSpaces(rawSnippet);
+      if (!normalizedSnippet) return false;
+      const snippetWords = normalizedSnippet.split(" ").filter(Boolean);
+      const firstFiveWords = snippetWords.slice(0, 5).join(" ");
+      const firstFourWords = snippetWords.slice(0, 4).join(" ");
+      const firstThreeWords = snippetWords.slice(0, 3).join(" ");
+      if (!firstThreeWords) return false;
+      const stop = new Set(["the", "and", "for", "with", "from", "into", "this", "that", "are", "was", "were"]);
+      const meaningfulWords = snippetWords.filter((w) => w.length >= 4 && !stop.has(w));
+      const midStart = Math.max(0, Math.floor(meaningfulWords.length / 2) - 2);
+      const midPhrase = meaningfulWords.slice(midStart, midStart + 4).join(" ");
+      // Keep candidates specific (>= 3 words) to avoid generic heading matches.
+      const phraseCandidates = [firstFiveWords, firstFourWords, firstThreeWords, midPhrase]
+        .map((p) => p.trim())
+        .filter((p) => p.split(" ").filter(Boolean).length >= 3);
+
+      const applyVisibleHighlight = (span: HTMLSpanElement) => {
+        // Bright but still minimalist highlight so it is clearly visible.
+        span.classList.add("qb-citation-highlight");
+        span.style.backgroundColor = "rgba(250, 204, 21, 0.55)";
+        span.style.borderRadius = "2px";
+        span.style.padding = "0 1px";
+      };
+
+      const normalizedSpanTexts = spans.map((s) => normalizeWithSpaces(s.textContent || ""));
+      // Keep explicit spacing between spans so words don't stick together.
+      const normalizedPageText = normalizedSpanTexts.join(" ").trim();
+      if (!normalizedPageText) return false;
+
+      let usedWindowFind = false;
+      let bestStartIdx = -1;
+      let matchedCount = 0;
+      let finalScore = 0;
+
+      // 1) Exact phrase to spans mapping on normalized page text.
+      for (const phrase of phraseCandidates) {
+        if (matchedCount > 0) break;
+        const occurrences = normalizedPageText.split(phrase).length - 1;
+        if (occurrences > 2) continue; // Too generic on this page, skip.
+        const idx = normalizedPageText.indexOf(phrase);
+        if (idx < 0) continue;
+        let cursor = 0;
+        const matchedIds: number[] = [];
+        for (let i = 0; i < normalizedSpanTexts.length; i++) {
+          const t = normalizedSpanTexts[i];
+          if (!t) {
+            cursor += 1;
+            continue;
+          }
+          const start = cursor;
+          const end = cursor + t.length;
+          const hitStart = idx;
+          const hitEnd = idx + phrase.length;
+          if (start < hitEnd && end > hitStart) matchedIds.push(i);
+          cursor = end + 1;
+        }
+        if (matchedIds.length) {
+          bestStartIdx = matchedIds[0];
+          matchedCount = matchedIds.length;
+          finalScore = 1;
+          for (const id of matchedIds) applyVisibleHighlight(spans[id]);
+        }
+      }
+
+      // 2) Safety fallback: token-window score (handles fragmented spans).
+      if (matchedCount === 0) {
+        const tokens = (firstFiveWords || firstFourWords || firstThreeWords)
+          .split(" ")
+          .map((t) => t.trim())
+          .filter((t) => t.length >= 4 && !stop.has(t));
+        let bestIdx = -1;
+        let bestTokenScore = 0;
+        for (let i = 0; i < normalizedSpanTexts.length; i++) {
+          const windowText = normalizedSpanTexts.slice(i, i + 8).join(" ");
+          if (!windowText) continue;
+          const score = tokens.reduce((acc, t) => acc + (windowText.includes(t) ? 1 : 0), 0);
+          if (score > bestTokenScore) {
+            bestTokenScore = score;
+            bestIdx = i;
+          }
+        }
+        if (bestIdx >= 0 && bestTokenScore > 0) {
+          bestStartIdx = bestIdx;
+          const end = Math.min(spans.length - 1, bestIdx + 4);
+          for (let j = bestIdx; j <= end; j++) applyVisibleHighlight(spans[j]);
+          matchedCount = end - bestIdx + 1;
+          finalScore = bestTokenScore / Math.max(tokens.length, 1);
+        }
+      }
+
+      if (matchedCount > 0) {
+        console.log(`[Highlight Debug] 
+  Snippet: "${normalizedSnippet.substring(0, 30)}..."
+  Start Index: ${bestStartIdx}
+  Final Similarity: ${finalScore.toFixed(2)}
+  Spans Matched: ${matchedCount}
+  Fallback Used: ${usedWindowFind}`);
+        return true;
+      }
+
+      const rect = pageEl.getBoundingClientRect();
+      const inView = rect.top < window.innerHeight && rect.bottom > 0;
+      const winWithFind = window as Window & { find?: (value: string) => boolean };
+      if (inView && typeof winWithFind.find === "function") {
+        try {
+          for (const phrase of phraseCandidates) {
+            if (usedWindowFind) break;
+            usedWindowFind = !!winWithFind.find(phrase);
+          }
+          if (!usedWindowFind) {
+            usedWindowFind = !!winWithFind.find(rawSnippet);
+          }
+          console.log(`[Highlight Debug] 
+  Snippet: "${normalizedSnippet.substring(0, 30)}..."
+  Start Index: ${bestStartIdx}
+  Final Similarity: ${finalScore.toFixed(2)}
+  Spans Matched: ${matchedCount}
+  Fallback Used: ${usedWindowFind}`);
+          return usedWindowFind;
+        } catch {
+          console.log(`[Highlight Debug] 
+  Snippet: "${normalizedSnippet.substring(0, 30)}..."
+  Start Index: ${bestStartIdx}
+  Final Similarity: ${finalScore.toFixed(2)}
+  Spans Matched: ${matchedCount}
+  Fallback Used: ${usedWindowFind}`);
+          return false;
+        }
+      }
+      console.log(`[Highlight Debug] 
+  Snippet: "${normalizedSnippet.substring(0, 30)}..."
+  Start Index: ${bestStartIdx}
+  Final Similarity: ${finalScore.toFixed(2)}
+  Spans Matched: ${matchedCount}
+  Fallback Used: ${usedWindowFind}`);
+      return false;
+    },
+    [clearAllHighlights, clearPageHighlights]
+  );
 
   if (!pdfFile.current || pdfFile.current.data !== fileData) {
     pdfFile.current = { data: fileData };
@@ -65,9 +248,25 @@ export function PdfLightPreview({ fileData, showToolbar = true }: Props) {
   useEffect(() => {
     setNumPages(0);
     setDocError(null);
+    setNotice(null);
     setSkeletonOverlay(true);
     firstPagePainted.current = false;
+    pendingCitationRef.current = null;
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
   }, [fileData]);
+
+  useEffect(() => {
+    // Plugin-style initialization bridge for highlighting lifecycle.
+    searchPluginInstance.current = {
+      highlight: (snippet: string, pageEl: HTMLElement) => applyFuzzyHighlight(snippet, pageEl),
+    };
+    return () => {
+      searchPluginInstance.current = null;
+    };
+  }, [applyFuzzyHighlight]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -107,6 +306,118 @@ export function PdfLightPreview({ fileData, showToolbar = true }: Props) {
   const width = Math.round(baseWidth * scale);
 
   const pageLineHeight = Math.round(width * 1.35);
+
+  useEffect(() => {
+    if (!activeCitation) return;
+    if (numPages <= 0) {
+      pendingCitationRef.current = activeCitation;
+      setNotice("Loading PDF...");
+      return;
+    }
+    const targetPage = Number(activeCitation.pageNumber) - 1;
+    console.log("Final Jump Index:", targetPage);
+    if (!Number.isFinite(targetPage) || targetPage < 0 || targetPage >= numPages) {
+      setNotice(`Citation page ${activeCitation.pageNumber} is out of range.`);
+      return;
+    }
+
+    const pageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPage + 1}"]`);
+    if (!pageEl) {
+      setNotice("Unable to locate cited page.");
+      return;
+    }
+
+    pageEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    const snippet = (activeCitation.snippet || "").trim().replace(/\s+/g, " ").slice(0, 260);
+    console.log("Attemping to highlight:", activeCitation.snippet);
+    console.log("Search plugin ready:", !!searchPluginInstance.current);
+    if (!snippet) {
+      setNotice(null);
+      return;
+    }
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
+    if (textLayerObserverRef.current) {
+      textLayerObserverRef.current.disconnect();
+      textLayerObserverRef.current = null;
+    }
+    let attempts = 0;
+    const maxAttempts = 8;
+    const tryHighlight = () => {
+      attempts += 1;
+      const currentPageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPage + 1}"]`);
+      if (!currentPageEl) {
+        setNotice("Unable to locate cited page.");
+        return;
+      }
+      const spanCount = currentPageEl.querySelectorAll(".react-pdf__Page__textContent span").length;
+      console.log("Highlight attempt", attempts, "spanCount:", spanCount);
+      if (spanCount === 0 && attempts < maxAttempts) {
+        const textLayer = currentPageEl.querySelector(".react-pdf__Page__textContent");
+        if (textLayer && !textLayerObserverRef.current) {
+          textLayerObserverRef.current = new MutationObserver(() => {
+            const nowCount = currentPageEl.querySelectorAll(".react-pdf__Page__textContent span").length;
+            if (nowCount > 0) {
+              textLayerObserverRef.current?.disconnect();
+              textLayerObserverRef.current = null;
+              // Small delay to allow final text layout stabilization.
+              highlightTimerRef.current = window.setTimeout(tryHighlight, 80);
+            }
+          });
+          textLayerObserverRef.current.observe(textLayer, { childList: true, subtree: true });
+        }
+        highlightTimerRef.current = window.setTimeout(tryHighlight, 120);
+        return;
+      }
+      let highlighted = false;
+      if (searchPluginInstance.current) {
+        highlighted = searchPluginInstance.current.highlight(snippet, currentPageEl);
+      }
+      if (!highlighted && attempts < maxAttempts) {
+        highlightTimerRef.current = window.setTimeout(tryHighlight, 150);
+        return;
+      }
+      if (!highlighted) {
+        setNotice("Could not auto-highlight this citation snippet.");
+        return;
+      }
+      setNotice(null);
+    };
+    tryHighlight();
+    return () => {
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
+      }
+      if (textLayerObserverRef.current) {
+        textLayerObserverRef.current.disconnect();
+        textLayerObserverRef.current = null;
+      }
+    };
+  }, [activeCitation, numPages]);
+
+  useEffect(() => {
+    if (numPages <= 0 || !pendingCitationRef.current) return;
+    const pending = pendingCitationRef.current;
+    pendingCitationRef.current = null;
+    requestAnimationFrame(() => {
+      const eventCitation = {
+        pageNumber: pending.pageNumber,
+        snippet: pending.snippet,
+        timestamp: pending.timestamp,
+      };
+      // Trigger useEffect path using same logic without mutating parent state.
+      const targetPage = Number(eventCitation.pageNumber) - 1;
+      console.log("Final Jump Index:", targetPage);
+      if (Number.isFinite(targetPage) && targetPage >= 0 && targetPage < numPages) {
+        const pageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPage + 1}"]`);
+        pageEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      setNotice(null);
+    });
+  }, [numPages]);
 
   return (
     <div className="flex h-full min-h-[400px] flex-col bg-slate-100 dark:bg-zinc-900/50">
@@ -173,6 +484,7 @@ export function PdfLightPreview({ fileData, showToolbar = true }: Props) {
                 return (
                   <div
                     key={`pdf-page-${pageNum}-${width}`}
+                    data-page-number={pageNum}
                     className="rounded-lg border border-slate-200/80 bg-white shadow-md dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <Page
@@ -216,6 +528,11 @@ export function PdfLightPreview({ fileData, showToolbar = true }: Props) {
       {docError && (
         <p className="border-t border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
           {docError}
+        </p>
+      )}
+      {!docError && notice && (
+        <p className="border-t border-slate-200 bg-white/90 px-4 py-2 text-xs text-slate-500 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-400">
+          {notice}
         </p>
       )}
     </div>

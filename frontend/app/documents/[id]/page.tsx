@@ -10,6 +10,7 @@ import {
   api,
   downloadBlob,
   fetchDocumentFile,
+  type CitationSource,
   type ChatMessage,
   type ChatSendResponse,
   type ChatSession,
@@ -37,6 +38,12 @@ export default function DocumentChatPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [showDocPicker, setShowDocPicker] = useState(false);
+  const [activeCitation, setActiveCitation] = useState<{
+    pageNumber: number;
+    snippet: string;
+    timestamp: number;
+  } | null>(null);
+  const [messageSources, setMessageSources] = useState<Record<string, CitationSource[]>>({});
 
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
@@ -206,7 +213,17 @@ export default function DocumentChatPage() {
       setThinking(false);
       setSessionId(res.session_id);
       setInput("");
-      await loadMessages(res.session_id);
+      setMessages((prev) => {
+        const dedup = new Set(prev.map((m) => m.id));
+        const next = [...prev];
+        if (!dedup.has(res.user_message.id)) next.push(res.user_message);
+        if (!dedup.has(res.assistant_message.id)) next.push(res.assistant_message);
+        return next;
+      });
+      setMessageSources((prev) => ({
+        ...prev,
+        [res.assistant_message.id]: Array.isArray(res.assistant_sources) ? res.assistant_sources : [],
+      }));
       const sess = await api<ChatSession[]>(`/chat/sessions?document_id=${encodeURIComponent(id)}`);
       setSessions(sess);
     } catch (err) {
@@ -258,6 +275,19 @@ export default function DocumentChatPage() {
     if (selectedDocs.length <= 1) return;
     const nextIndex = previewDocIndex === selectedDocs.length - 1 ? 0 : previewDocIndex + 1;
     setPreviewDocId(selectedDocs[nextIndex].id);
+  }
+
+  function handleCitationClick(citation: { pageNumber: number; snippet: string }) {
+    const pageNumber = Number(citation.pageNumber);
+    if (!Number.isFinite(pageNumber) || pageNumber < 1) {
+      setError("Citation page is invalid.");
+      return;
+    }
+    setActiveCitation({
+      pageNumber,
+      snippet: citation.snippet || "",
+      timestamp: Date.now(),
+    });
   }
 
   if (loading) {
@@ -468,7 +498,7 @@ export default function DocumentChatPage() {
                   <p className="bg-red-50/80 p-4 text-sm text-red-600 dark:text-red-400">{previewError}</p>
                 )}
                 {!previewLoading && !previewError && previewKind === "pdf" && pdfData && (
-                  <PdfLightPreview fileData={pdfData} showToolbar={false} />
+                  <PdfLightPreview fileData={pdfData} showToolbar={false} activeCitation={activeCitation} />
                 )}
                 {!previewLoading && !previewError && previewKind === "text" && textFilePreview !== null && (
                   <pre className="h-full overflow-auto whitespace-pre-wrap break-words bg-white/80 p-4 text-xs text-slate-800 dark:text-zinc-200">
@@ -521,7 +551,13 @@ export default function DocumentChatPage() {
                     </p>
                   )}
                   {messages.map((m) => (
-                    <MessageBubble key={m.id} message={m} onEdit={(text) => setInput(text)} />
+                    <MessageBubble
+                      key={m.id}
+                      message={m}
+                      sources={messageSources[m.id] ?? []}
+                      onCitationClick={handleCitationClick}
+                      onEdit={(text) => setInput(text)}
+                    />
                   ))}
                   {thinking && <ThinkingBubble />}
                 </div>
@@ -590,9 +626,13 @@ export default function DocumentChatPage() {
 /* ── Message bubble with action bar ───────────────────────── */
 function MessageBubble({
   message,
+  sources,
+  onCitationClick,
   onEdit,
 }: {
   message: import("@/lib/api").ChatMessage;
+  sources: CitationSource[];
+  onCitationClick: (citation: { pageNumber: number; snippet: string }) => void;
   onEdit: (text: string) => void;
 }) {
   const isUser = message.role === "user";
@@ -606,6 +646,9 @@ function MessageBubble({
     });
   };
 
+  const parts = message.content.split(/(\[\d+\])/g);
+  const citationRegex = /^\[(\d+)\]$/;
+
   return (
     <div className={`group flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
       <div
@@ -615,7 +658,41 @@ function MessageBubble({
             : "rounded-tl-sm bg-white text-slate-900 dark:bg-zinc-800 dark:text-zinc-100"
         }`}
       >
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className="whitespace-pre-wrap break-words">
+          {parts.map((part, idx) => {
+            const match = citationRegex.exec(part);
+            if (!match) return <span key={`${message.id}-txt-${idx}`}>{part}</span>;
+            const citationIndex = Number(match[1]);
+            const source = sources.find((item) => item.index === citationIndex);
+            if (!source || !source.page_number) {
+              return (
+                <span key={`${message.id}-cit-${idx}`} className="text-slate-400">
+                  {part}
+                </span>
+              );
+            }
+            return (
+              <button
+                key={`${message.id}-cit-${idx}`}
+                type="button"
+                onClick={() =>
+                  onCitationClick({
+                    pageNumber: source.page_number as number,
+                    snippet: source.content || "",
+                  })
+                }
+                title={`Go to page ${source.page_number}${source.file_name ? ` • ${source.file_name}` : ""}`}
+                className={`mx-0.5 inline-flex items-center rounded-md border px-1.5 py-0 text-[11px] transition ${
+                  isUser
+                    ? "border-blue-200/40 bg-blue-100/20 text-blue-50 hover:bg-blue-100/35"
+                    : "border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300 hover:bg-blue-100"
+                }`}
+              >
+                {part}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Action bar — always visible */}
