@@ -52,3 +52,4 @@ class Message(Base):
     )
 
     session: Mapped["ChatSession"] = relationship(back_populates="messages")
+    bookmarks: Mapped[list["Bookmark"]] = relationship(cascade="all, delete-orphan")

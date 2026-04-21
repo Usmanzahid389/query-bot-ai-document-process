@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
 import time
 import uuid
@@ -18,13 +19,27 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Global system instructions for strict context-grounded answering/citations.
-SYSTEM_PROMPT = (
-    "You are a concise AI assistant. Answer using ONLY the provided context. "
-    "Cite your sources using ONLY the index number in square brackets, e.g., [1]. "
-    "NEVER mention filenames, 'Source:', or 'Page:' in your response. "
-    "Your job is to provide clean text, while the system handles metadata in the background."
-)
+SYSTEM_PROMPT = """You are QueryBot, a professional and helpful AI Document Assistant.
+
+### 1. GREETING & GENERAL QUERIES (No Context Required)
+- If the user provides a greeting (e.g., Hi, Hello, Hey, How are you?) or Islamic greetings (e.g., Salam, AOA, Assalam o Alaikum):
+  - For Islamic greetings, ALWAYS start with 'Wa alaikum assalam'.
+  - Provide a warm, brief response as QueryBot.
+  - Example: 'Wa alaikum assalam. I am QueryBot, your AI document assistant. How can I help you today?'
+- If asked 'Who are you?' or 'What can you do?', explain that you analyze documents (PDFs), provide summaries, and answer questions using accurate citations.
+- CRITICAL: Never use citation brackets like [1] or [2] in these general replies. Do not search or quote the CONTEXT for these.
+
+### 2. DOCUMENT SPECIFIC QUERIES (Context Required)
+- Use ONLY the provided CONTEXT block to answer questions about the files.
+- You MUST provide citations using numbered brackets like [1] or [1, 2] at the end of the relevant sentences.
+- Use the exact index number from the context (e.g., Chunk [1] becomes citation [1]).
+- DO NOT mention filenames, 'Source:', or 'Page:' in the text—only use the brackets [n].
+- If the answer is not in the context, say: 'I'm sorry, I couldn't find that specific information in the uploaded documents.'
+
+### 3. FORMATTING RULES
+- Maintain professional tone.
+- Use bullet points for lists to keep answers readable.
+- Ensure citations are placed BEFORE the final period of a sentence if possible, e.g., '...as mentioned in the proposal [1].'"""
 
 _STOP_WORDS = frozenset(
     {
@@ -114,6 +129,16 @@ _vectorstore: Chroma | None = None
 _SECTION_HEADER_RE = re.compile(r"(?im)^(?:\d+(?:\.\d+)*)\s+[A-Z][^\n]{2,}$")
 _FLOW_QUERY_RE = re.compile(
     r"(?i)\b(steps?|step-by-step|process|workflow|procedure)\b"
+)
+_SMALL_TALK_RE = re.compile(
+    r"(?i)^\s*(hi|hello|hey|salam|salaam|aoa|a\.o\.a|assalam\s*o\s*alaikum|assalamualaikum|assalamu\s*alaikum|"
+    r"how are you|how r you|what's up|whats up|who are you|what are you|what can you do|what do you do)\b[!?.,\s]*$"
+)
+_ISLAMIC_GREETING_RE = re.compile(
+    r"(?i)^\s*(aoa|a\.o\.a|assalam\s*o\s*alaikum|assalamualaikum|assalamu\s*alaikum|salam|salaam)\s*[!?.]*$"
+)
+_THANKS_BYE_RE = re.compile(
+    r"(?i)^\s*(thanks|thank you|thx|ty|bye|goodbye|good morning|good afternoon|good evening)\s*[!?.,\s]*$"
 )
 
 
@@ -490,11 +515,53 @@ def _invoke_with_retries(chain, payload: dict[str, str], retries: int = 2) -> ob
     raise RuntimeError("LLM call failed without an exception")
 
 
+def _is_general_conversation(question: str) -> bool:
+    """Whole-message meta/greetings: no retrieval, no citations."""
+    q = (question or "").strip()
+    if not q:
+        return False
+    return bool(
+        _ISLAMIC_GREETING_RE.match(q)
+        or _SMALL_TALK_RE.match(q)
+        or _THANKS_BYE_RE.match(q)
+    )
+
+
+_GENERAL_CONTEXT_PLACEHOLDER = (
+    "[No document context — general conversation only. Do not cite this line.]"
+)
+
+
+def _pace_small_talk_reply() -> None:
+    """Occasional short pause so casual replies do not feel instant every time."""
+    r = random.random()
+    if r < 0.35:
+        time.sleep(random.uniform(0.05, 0.18))
+    elif r < 0.75:
+        time.sleep(random.uniform(0.45, 0.95))
+    else:
+        time.sleep(random.uniform(1.0, 1.65))
+
+
 def answer_question(
     user_id: uuid.UUID,
     docs: list,
     question: str,
 ) -> dict[str, object]:
+    if _is_general_conversation(question):
+        _pace_small_talk_reply()
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", SYSTEM_PROMPT),
+                ("human", "CONTEXT:\n{context}\n\nQUESTION:\n{question}"),
+            ]
+        )
+        chain = prompt | _llm(max_tokens=384)
+        out = _invoke_with_retries(
+            chain, {"context": _GENERAL_CONTEXT_PLACEHOLDER, "question": question}
+        )
+        return {"answer": _message_content(out), "sources": []}
+
     ids = [d.id for d in docs]
     final_k, fetch_k, page_filter, use_mmr = _qa_retrieval_plan(question)
     chunks = _retrieve_context(

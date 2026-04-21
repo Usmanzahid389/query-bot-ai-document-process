@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.models  # noqa: F401 — register SQLAlchemy models
-from app.api.routes import auth, chat, documents, export
+from app.api.routes import auth, bookmarks, chat, documents, export
 from app.core.config import settings
 from app.core.database import init_db
 
@@ -35,6 +35,7 @@ app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(export.router)
+app.include_router(bookmarks.router)
 
 
 @app.get("/health")
