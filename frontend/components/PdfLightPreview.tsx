@@ -58,7 +58,11 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
   const firstPagePainted = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [baseWidth, setBaseWidth] = useState(640);
+  // We track `originalData` separately from `data` because PDF.js transfers
+  // the ArrayBuffer to its worker (detaching it). Keeping the original lets us
+  // detect when new data arrives without the comparison hitting a detached buffer.
   const pdfFile = useRef<{ data: Uint8Array } | null>(null);
+  const pdfFileSource = useRef<Uint8Array | null>(null);
   const pendingCitationRef = useRef<{ pageNumber: number; snippet: string; timestamp: number } | null>(null);
   const searchPluginInstance = useRef<{ highlight: (snippet: string, pageEl: HTMLElement) => boolean } | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -262,8 +266,11 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
     [clearAllHighlights, clearPageHighlights]
   );
 
-  if (!pdfFile.current || pdfFile.current.data !== fileData) {
-    pdfFile.current = { data: fileData };
+  if (!pdfFile.current || pdfFileSource.current !== fileData) {
+    // slice(0) creates a fresh copy with its own ArrayBuffer.
+    // PDF.js will transfer (detach) that copy's buffer — the original fileData buffer stays intact.
+    pdfFileSource.current = fileData;
+    pdfFile.current = { data: fileData.slice(0) };
   }
 
   useEffect(() => {
