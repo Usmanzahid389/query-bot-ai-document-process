@@ -18,18 +18,12 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Global system instructions for Q&A and summarization (concise, grounded, diagram/list friendly).
+# Global system instructions for strict context-grounded answering/citations.
 SYSTEM_PROMPT = (
-    'You are a precise technical assistant. Answer the user question directly using the provided context. '
-    'If the information is in a list or diagram format, provide it as a clear bulleted list. '
-    'Avoid long introductory sentences like "Based on the provided context..."\n\n'
-    "You must also:\n"
-    "- Look for conceptual and semantic matches: headings, diagram labels, or process steps may be split across "
-    "lines, hyphenated, wrapped, or use close wording; if the idea clearly appears in the context, include it.\n"
-    "- Read across all provided chunks and adjacent material before deciding something is missing.\n"
-    "- Use ONLY the provided CONTEXT for factual claims. Each [n] citation must refer only to the text shown "
-    "for chunk [n] in that context.\n"
-    "- Stay concise: no filler, no repeated disclaimers, no meta-essays about which chunks might be relevant."
+    "You are a concise AI assistant. Answer using ONLY the provided context. "
+    "Cite your sources using ONLY the index number in square brackets, e.g., [1]. "
+    "NEVER mention filenames, 'Source:', or 'Page:' in your response. "
+    "Your job is to provide clean text, while the system handles metadata in the background."
 )
 
 _STOP_WORDS = frozenset(
@@ -355,16 +349,33 @@ def _retrieve_context(
         want_mmr = False
     if want_mmr and fk > final_k:
         try:
-            return vs.max_marginal_relevance_search(
+            results = vs.max_marginal_relevance_search(
                 query,
                 k=final_k,
                 fetch_k=fk,
                 lambda_mult=settings.rag_mmr_lambda,
                 filter=where,
             )
+            return _dedupe_chunks_by_content(results)
         except Exception:
             logger.exception("MMR retrieval failed; falling back to similarity search")
-    return vs.similarity_search(query, k=final_k, filter=where)
+    results = vs.similarity_search(query, k=final_k, filter=where)
+    return _dedupe_chunks_by_content(results)
+
+
+def _dedupe_chunks_by_content(chunks: list[LCDocument]) -> list[LCDocument]:
+    """Remove duplicate retrieved chunks by normalized page_content text."""
+    seen: set[str] = set()
+    unique: list[LCDocument] = []
+    for d in chunks:
+        normalized = re.sub(r"\s+", " ", (d.page_content or "")).strip().lower()
+        if not normalized:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(d)
+    return unique
 
 
 def _summary_fetch_k() -> int:
@@ -374,11 +385,23 @@ def _summary_fetch_k() -> int:
 def _format_context(chunks: list[LCDocument]) -> str:
     parts: list[str] = []
     for i, d in enumerate(chunks, start=1):
-        meta = d.metadata or {}
-        src = meta.get("source", "?")
-        page = meta.get("page", "?")
-        parts.append(f"[{i}] Source: {src} | Page: {page}\n{d.page_content}")
+        parts.append(f"[Chunk {i}]: {d.page_content}")
     return "\n\n---\n\n".join(parts)
+
+
+def _build_sources(chunks: list[LCDocument]) -> list[dict[str, object]]:
+    sources: list[dict[str, object]] = []
+    for i, d in enumerate(chunks, start=1):
+        meta = d.metadata or {}
+        sources.append(
+            {
+                "index": i,
+                "page_number": meta.get("page"),
+                "file_name": meta.get("source"),
+                "content": d.page_content,
+            }
+        )
+    return sources
 
 
 def _rerank_chunks_query_focus(question: str, chunks: list[LCDocument]) -> list[LCDocument]:
@@ -471,7 +494,7 @@ def answer_question(
     user_id: uuid.UUID,
     docs: list,
     question: str,
-) -> str:
+) -> dict[str, object]:
     ids = [d.id for d in docs]
     final_k, fetch_k, page_filter, use_mmr = _qa_retrieval_plan(question)
     chunks = _retrieve_context(
@@ -501,13 +524,17 @@ def answer_question(
             page=page_filter,
         )
     if not chunks:
-        return (
-            "I couldn’t find anything relevant in your uploaded document for this question. "
-            "The file might be empty, mostly images (scanned PDF without OCR), or the topic may not appear in the text."
-        )
+        return {
+            "answer": (
+                "I couldn’t find anything relevant in your uploaded document for this question. "
+                "The file might be empty, mostly images (scanned PDF without OCR), or the topic may not appear in the text."
+            ),
+            "sources": [],
+        }
 
     chunks = _rerank_chunks_query_focus(question, chunks)
     context = _format_context(chunks)
+    sources = _build_sources(chunks)
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", SYSTEM_PROMPT),
@@ -519,7 +546,7 @@ def answer_question(
     )
     chain = prompt | _llm(max_tokens=768)
     out = _invoke_with_retries(chain, {"context": context, "question": question})
-    return _message_content(out)
+    return {"answer": _message_content(out), "sources": sources}
 
 
 def summarize_document_rag(

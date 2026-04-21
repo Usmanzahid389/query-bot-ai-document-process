@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +18,7 @@ from app.models.user import User
 from app.schemas.chat import (
     ChatMessageOut,
     ChatSendResponse,
+    EditMessageRequest,
     ChatSessionCreate,
     ChatSessionOut,
     SendMessageRequest,
@@ -46,6 +47,50 @@ async def _get_owned_documents(
 
 def _session_doc_ids(session: ChatSession) -> list[uuid.UUID]:
     return sorted([link.document_id for link in session.document_links], key=lambda x: str(x))
+
+
+async def _generate_assistant_reply(
+    *,
+    current: User,
+    docs: list[Document],
+    question: str,
+) -> tuple[str, list[dict[str, object]]]:
+    doc_snapshots = [
+        SimpleNamespace(
+            id=d.id,
+            original_filename=d.original_filename,
+            extracted_text=d.extracted_text or "",
+        )
+        for d in docs
+    ]
+    sources: list[dict[str, object]] = []
+    try:
+        rag_result = await asyncio.to_thread(
+            rag_service.answer_question,
+            current.id,
+            doc_snapshots,
+            question,
+        )
+    except Exception:
+        logger.exception("RAG LLM call failed for chat message")
+        answer = (
+            "Could not get an AI reply. Check LLM_API_KEY, that LLM_MODEL is valid for your provider "
+            f"(current: '{settings.llm_model}' at {settings.llm_base_url}), and the server can reach that URL. "
+            "If you use Groq, model IDs look like 'llama-3.3-70b-versatile', not OpenRouter slugs. "
+            "See the API terminal log for details."
+        )
+    else:
+        if isinstance(rag_result, dict):
+            answer = rag_result.get("answer", "")
+            raw_sources = rag_result.get("sources", [])
+            if isinstance(raw_sources, list):
+                sources = [s for s in raw_sources if isinstance(s, dict)]
+        else:
+            answer = rag_result
+
+    if not isinstance(answer, str):
+        answer = str(answer) if answer is not None else ""
+    return answer.replace("\x00", ""), sources
 
 
 @router.post("/sessions", response_model=ChatSessionOut, status_code=status.HTTP_201_CREATED)
@@ -155,34 +200,7 @@ async def send_message(
     db.add(user_msg)
     await db.flush()
 
-    # Snapshot plain data: SQLAlchemy ORM instances must not be used inside the worker
-    # thread (greenlet / session bound to async context → 500 on attribute access).
-    doc_snapshots = [
-        SimpleNamespace(
-            id=d.id,
-            original_filename=d.original_filename,
-            extracted_text=d.extracted_text or "",
-        )
-        for d in docs
-    ]
-    try:
-        answer = await asyncio.to_thread(
-            rag_service.answer_question,
-            current.id,
-            doc_snapshots,
-            body.message,
-        )
-    except Exception:
-        logger.exception("RAG LLM call failed for chat message")
-        answer = (
-            "Could not get an AI reply. Check LLM_API_KEY, that LLM_MODEL is valid for your provider "
-            f"(current: '{settings.llm_model}' at {settings.llm_base_url}), and the server can reach that URL. "
-            "If you use Groq, model IDs look like 'llama-3.3-70b-versatile', not OpenRouter slugs. "
-            "See the API terminal log for details."
-        )
-    if not isinstance(answer, str):
-        answer = str(answer) if answer is not None else ""
-    answer = answer.replace("\x00", "")
+    answer, sources = await _generate_assistant_reply(current=current, docs=docs, question=body.message)
     assistant_msg = Message(session_id=session.id, role="assistant", content=answer)
     db.add(assistant_msg)
     await db.commit()
@@ -203,4 +221,66 @@ async def send_message(
             content=assistant_msg.content,
             created_at=assistant_msg.created_at,
         ),
+        assistant_sources=sources,
+    )
+
+
+@router.patch("/messages/{message_id}", response_model=ChatSendResponse)
+async def edit_message(
+    message_id: uuid.UUID,
+    body: EditMessageRequest,
+    current: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ChatSendResponse:
+    result = await db.execute(
+        select(Message)
+        .where(Message.id == message_id)
+        .options(
+            selectinload(Message.session).selectinload(ChatSession.document_links),
+        )
+    )
+    user_msg = result.scalar_one_or_none()
+    if user_msg is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if user_msg.role != "user":
+        raise HTTPException(status_code=400, detail="Only user messages can be edited")
+    if user_msg.session.user_id != current.id:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    session = user_msg.session
+    docs = await _get_owned_documents(db, current.id, _session_doc_ids(session))
+
+    user_msg.content = body.message
+    edited_at = user_msg.created_at
+
+    await db.execute(
+        delete(Message).where(
+            Message.session_id == session.id,
+            Message.created_at > edited_at,
+        )
+    )
+
+    answer, sources = await _generate_assistant_reply(current=current, docs=docs, question=body.message)
+    assistant_msg = Message(session_id=session.id, role="assistant", content=answer)
+    db.add(assistant_msg)
+
+    await db.commit()
+    await db.refresh(user_msg)
+    await db.refresh(assistant_msg)
+
+    return ChatSendResponse(
+        session_id=session.id,
+        user_message=ChatMessageOut(
+            id=user_msg.id,
+            role=user_msg.role,
+            content=user_msg.content,
+            created_at=user_msg.created_at,
+        ),
+        assistant_message=ChatMessageOut(
+            id=assistant_msg.id,
+            role=assistant_msg.role,
+            content=assistant_msg.content,
+            created_at=assistant_msg.created_at,
+        ),
+        assistant_sources=sources,
     )
