@@ -20,6 +20,8 @@ export default function DocumentsPage() {
   const [me, setMe] = useState<User | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     function onOpen() { setIsOpen(true); }
@@ -79,15 +81,22 @@ export default function DocumentsPage() {
     e.target.value = "";
   }
 
-  async function deleteDocument(document: Document) {
-    const ok = window.confirm(`Delete "${document.original_filename}"? This cannot be undone.`);
-    if (!ok) return;
+  function requestDeleteDocument(document: Document) {
+    setDeleteTarget(document);
+  }
+
+  async function confirmDeleteDocument() {
+    if (!deleteTarget) return;
     setError(null);
+    setDeletingId(deleteTarget.id);
     try {
-      await api<void>(`/documents/${document.id}`, { method: "DELETE" });
+      await api<void>(`/documents/${deleteTarget.id}`, { method: "DELETE" });
       await load();
+      setDeleteTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -324,56 +333,58 @@ export default function DocumentsPage() {
               </div>
             </section>
 
-            {/* Upload */}
-            <section
-              onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-              onDragLeave={() => setDrag(false)}
-              onDrop={onDrop}
-              className={`rounded-2xl border-2 border-dashed p-8 text-center transition-all ${
-                drag ? "border-[#0C2C55] bg-[#0C2C55]/5" : "border-slate-200 bg-white"
-              }`}
-            >
-              <label className="flex cursor-pointer flex-col items-center gap-2">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-                  <svg className="h-6 w-6 text-[#0C2C55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
+            <div className="space-y-2">
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  {error}
                 </div>
-                <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  {uploading && (
-                    <svg
-                      className="h-4 w-4 animate-spin text-[#0C2C55]"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-90"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
-                    </svg>
-                  )}
-                  {uploading ? "Uploading..." : "Upload Documents"}
-                </span>
-                <span className="text-xs text-slate-400">Drag & drop or click · PDF, DOCX, TXT</span>
-                <input type="file" accept=".pdf,.docx,.txt" className="hidden" disabled={uploading} onChange={onFile} />
-              </label>
-            </section>
+              )}
 
-            {error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-                {error}
-              </div>
-            )}
+              {/* Upload */}
+              <section
+                onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+                onDragLeave={() => setDrag(false)}
+                onDrop={onDrop}
+                className={`rounded-2xl border-2 border-dashed p-8 text-center transition-all ${
+                  drag ? "border-[#0C2C55] bg-[#0C2C55]/5" : "border-slate-200 bg-white"
+                }`}
+              >
+                <label className="flex cursor-pointer flex-col items-center gap-2">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                    <svg className="h-6 w-6 text-[#0C2C55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                  </div>
+                  <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    {uploading && (
+                      <svg
+                        className="h-4 w-4 animate-spin text-[#0C2C55]"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-90"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                        />
+                      </svg>
+                    )}
+                    {uploading ? "Uploading..." : "Upload Documents"}
+                  </span>
+                  <span className="text-xs text-slate-400">Drag & drop or click · PDF, DOCX, TXT</span>
+                  <input type="file" accept=".pdf,.docx,.txt" className="hidden" disabled={uploading} onChange={onFile} />
+                </label>
+              </section>
+            </div>
 
             {/* Files Table */}
             <section className="space-y-4">
@@ -451,10 +462,11 @@ export default function DocumentsPage() {
                               </Link>
                               <button
                                 type="button"
-                                onClick={() => void deleteDocument(d)}
+                                onClick={() => requestDeleteDocument(d)}
                                 aria-label={`Delete ${d.original_filename}`}
                                 title="Delete document"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-black transition hover:border-black hover:bg-slate-50"
+                                disabled={deletingId === d.id}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-black transition hover:border-black hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <path d="M3 6h18" strokeLinecap="round" />
@@ -476,6 +488,36 @@ export default function DocumentsPage() {
           </div>
         </main>
       </div>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">Delete document?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              This will permanently remove{" "}
+              <span className="font-semibold text-slate-900">{deleteTarget.original_filename}</span>.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deletingId === deleteTarget.id}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteDocument()}
+                disabled={deletingId === deleteTarget.id}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingId === deleteTarget.id ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </RequireAuth>
   );
 }
