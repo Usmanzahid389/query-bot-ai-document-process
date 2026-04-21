@@ -4,7 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChatHeader } from "@/components/ChatHeader";
 import { RequireAuth } from "@/components/RequireAuth";
-import { api, editChatMessage, type ChatMessage, type ChatSendResponse, type ChatSession, type Document } from "@/lib/api";
+import {
+  api,
+  createBookmark,
+  deleteBookmarkByMessage,
+  editChatMessage,
+  listBookmarkedMessageIds,
+  type ChatMessage,
+  type ChatSendResponse,
+  type ChatSession,
+  type Document,
+} from "@/lib/api";
 
 export default function MultiDocumentChatPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -20,6 +30,8 @@ export default function MultiDocumentChatPage() {
   const [sending, setSending] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [bookmarkPendingIds, setBookmarkPendingIds] = useState<Set<string>>(new Set());
 
   const normalizedSelectedIds = useMemo(() => [...selectedIds].sort(), [selectedIds]);
 
@@ -63,14 +75,22 @@ export default function MultiDocumentChatPage() {
     setMessages(msgs);
   }
 
+  async function loadBookmarkedIds(sid?: string) {
+    const ids = await listBookmarkedMessageIds(sid);
+    setBookmarkedIds(new Set(ids));
+  }
+
   useEffect(() => {
     if (!sessionId) {
       setMessages([]);
+      setBookmarkedIds(new Set());
       setEditingMessageId(null);
       setEditingDraft("");
       return;
     }
-    loadMessages(sessionId).catch((e) => setError(e instanceof Error ? e.message : "Failed to load messages"));
+    Promise.all([loadMessages(sessionId), loadBookmarkedIds(sessionId)]).catch((e) =>
+      setError(e instanceof Error ? e.message : "Failed to load messages")
+    );
   }, [sessionId]);
 
   useEffect(() => {
@@ -130,6 +150,40 @@ export default function MultiDocumentChatPage() {
       setError(e instanceof Error ? e.message : "Send failed");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function onToggleBookmark(message: ChatMessage) {
+    if (message.id.startsWith("optimistic-")) return;
+    if (bookmarkPendingIds.has(message.id)) return;
+    const wasBookmarked = bookmarkedIds.has(message.id);
+    setBookmarkPendingIds((prev) => new Set(prev).add(message.id));
+    setBookmarkedIds((prev) => {
+      const next = new Set(prev);
+      if (wasBookmarked) next.delete(message.id);
+      else next.add(message.id);
+      return next;
+    });
+    try {
+      if (wasBookmarked) {
+        await deleteBookmarkByMessage(message.id);
+      } else {
+        await createBookmark(message.id);
+      }
+    } catch (e) {
+      setBookmarkedIds((prev) => {
+        const next = new Set(prev);
+        if (wasBookmarked) next.add(message.id);
+        else next.delete(message.id);
+        return next;
+      });
+      setError(e instanceof Error ? e.message : "Bookmark update failed");
+    } finally {
+      setBookmarkPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(message.id);
+        return next;
+      });
     }
   }
 
@@ -258,6 +312,9 @@ export default function MultiDocumentChatPage() {
                       isEdited={editedMessageIds.has(message.id)}
                       editingDraft={editingDraft}
                       editSaving={sending}
+                      isBookmarked={bookmarkedIds.has(message.id)}
+                      bookmarkPending={bookmarkPendingIds.has(message.id)}
+                      onToggleBookmark={onToggleBookmark}
                       onEdit={(msg) => {
                         setEditingMessageId(msg.id);
                         setEditingDraft(msg.content);
@@ -334,6 +391,9 @@ function MessageBubble({
   isEdited,
   editingDraft,
   editSaving,
+  isBookmarked,
+  bookmarkPending,
+  onToggleBookmark,
   onEdit,
   onEditingDraftChange,
   onSaveEdit,
@@ -344,6 +404,9 @@ function MessageBubble({
   isEdited: boolean;
   editingDraft: string;
   editSaving: boolean;
+  isBookmarked: boolean;
+  bookmarkPending: boolean;
+  onToggleBookmark: (message: ChatMessage) => void;
   onEdit: (message: ChatMessage) => void;
   onEditingDraftChange: (value: string) => void;
   onSaveEdit: () => void;
@@ -351,7 +414,6 @@ function MessageBubble({
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content).then(() => {
@@ -432,14 +494,15 @@ function MessageBubble({
 
         <button
           type="button"
-          aria-label={bookmarked ? "Remove bookmark" : "Bookmark message"}
-          onClick={() => setBookmarked((b) => !b)}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+          aria-label={isBookmarked ? "Remove bookmark" : "Bookmark message"}
+          onClick={() => onToggleBookmark(message)}
+          disabled={bookmarkPending}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
         >
           <svg
             viewBox="0 0 24 24"
-            fill={bookmarked ? "#0C2C55" : "none"}
-            stroke={bookmarked ? "#0C2C55" : "currentColor"}
+            fill={isBookmarked ? "#0C2C55" : "none"}
+            stroke={isBookmarked ? "#0C2C55" : "currentColor"}
             strokeWidth="2"
             className="h-3.5 w-3.5"
           >

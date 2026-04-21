@@ -52,6 +52,16 @@ export type ChatSendResponse = {
 };
 
 export type SummaryResponse = { document_id: string; summary: string };
+export type Bookmark = {
+  id: string;
+  message_id: string;
+  session_id: string;
+  session_title: string;
+  document_ids: string[];
+  document_names: string[];
+  snippet: string;
+  created_at: string;
+};
 
 type Opts = RequestInit & { token?: string | null };
 
@@ -147,6 +157,28 @@ export async function editChatMessage(messageId: string, message: string): Promi
   return api<ChatSendResponse>(`/chat/messages/${encodeURIComponent(messageId)}`, {
     method: "PATCH",
     body: JSON.stringify({ message }),
+  });
+}
+
+export async function listBookmarks(limit = 100): Promise<Bookmark[]> {
+  return api<Bookmark[]>(`/bookmarks?limit=${encodeURIComponent(String(limit))}`);
+}
+
+export async function listBookmarkedMessageIds(sessionId?: string): Promise<string[]> {
+  const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  return api<string[]>(`/bookmarks/message-ids${qs}`);
+}
+
+export async function createBookmark(messageId: string): Promise<Bookmark> {
+  return api<Bookmark>("/bookmarks", {
+    method: "POST",
+    body: JSON.stringify({ message_id: messageId }),
+  });
+}
+
+export async function deleteBookmarkByMessage(messageId: string): Promise<void> {
+  return api<void>(`/bookmarks/by-message/${encodeURIComponent(messageId)}`, {
+    method: "DELETE",
   });
 }
 
