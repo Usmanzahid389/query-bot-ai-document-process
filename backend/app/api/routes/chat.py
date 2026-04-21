@@ -21,6 +21,7 @@ from app.schemas.chat import (
     EditMessageRequest,
     ChatSessionCreate,
     ChatSessionOut,
+    RenameSessionRequest,
     SendMessageRequest,
 )
 from app.services import rag_service
@@ -163,6 +164,49 @@ async def get_messages(
         ChatMessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
         for m in messages
     ]
+
+
+@router.patch("/sessions/{session_id}", response_model=ChatSessionOut)
+async def rename_session(
+    session_id: uuid.UUID,
+    body: RenameSessionRequest,
+    current: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ChatSessionOut:
+    result = await db.execute(
+        select(ChatSession)
+        .where(ChatSession.id == session_id, ChatSession.user_id == current.id)
+        .options(selectinload(ChatSession.document_links))
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session.title = body.title.strip()[:512]
+    await db.commit()
+    await db.refresh(session)
+    return ChatSessionOut(
+        id=session.id,
+        title=session.title,
+        document_ids=_session_doc_ids(session),
+        created_at=session.created_at,
+    )
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: uuid.UUID,
+    current: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    result = await db.execute(
+        select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == current.id)
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await db.delete(session)
+    await db.commit()
 
 
 @router.post("/messages", response_model=ChatSendResponse)

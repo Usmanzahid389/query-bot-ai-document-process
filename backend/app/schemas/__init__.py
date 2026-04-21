@@ -4,9 +4,11 @@ from app.schemas.chat import (
     ChatSendResponse,
     ChatSessionCreate,
     ChatSessionOut,
+    RenameSessionRequest,
     SendMessageRequest,
     SummaryResponse,
 )
+from app.schemas.bookmark import BookmarkCreate, BookmarkOut
 from app.schemas.document import DocumentOut
 
 __all__ = [
@@ -19,6 +21,9 @@ __all__ = [
     "ChatSessionOut",
     "ChatMessageOut",
     "SendMessageRequest",
+    "RenameSessionRequest",
     "SummaryResponse",
     "ChatSendResponse",
+    "BookmarkCreate",
+    "BookmarkOut",
 ]
