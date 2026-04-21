@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { api, uploadDocument, type Document } from "@/lib/api";
+import { api, uploadDocumentWithProgress, type Document } from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
 
 export default function DocumentsPage() {
@@ -13,6 +13,8 @@ export default function DocumentsPage() {
   const [docs, setDocs] = useState<Document[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
   const [drag, setDrag] = useState(false);
 
   const load = useCallback(async () => {
@@ -29,17 +31,52 @@ export default function DocumentsPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!uploading) {
+      if (uploadProgress >= 100) {
+        setDisplayProgress(100);
+        const t = window.setTimeout(() => {
+          setUploadProgress(0);
+          setDisplayProgress(0);
+        }, 650);
+        return () => window.clearTimeout(t);
+      }
+      setDisplayProgress(0);
+      return;
+    }
+
+    const target = uploadProgress >= 100 ? 100 : Math.min(uploadProgress, 94);
+    const t = window.setInterval(() => {
+      setDisplayProgress((prev) => {
+        if (prev >= target) return prev;
+        // Smooth, generic easing feel.
+        const step = Math.max(0.6, (target - prev) * 0.16);
+        return Math.min(target, prev + step);
+      });
+    }, 90);
+    return () => window.clearInterval(t);
+  }, [uploading, uploadProgress]);
+
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setUploading(true);
+    setUploadProgress(0);
     setError(null);
+    let completed = false;
     try {
-      await uploadDocument(file);
+      await uploadDocumentWithProgress(file, (percent) => setUploadProgress(percent));
+      setUploadProgress(100);
       await load();
+      completed = true;
+      // Keep 100% visible briefly so completion feels natural.
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
+      if (completed) {
+        setUploadProgress(0);
+      }
     }
   }
 
@@ -77,6 +114,7 @@ export default function DocumentsPage() {
   const filteredFiles = docs.filter((file) =>
     file.original_filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const visualProgress = uploading || uploadProgress >= 100 ? Math.min(displayProgress, 100) : 0;
 
   const sidebarLinkClass = (href: string) => {
     const isActive = pathname === href;
@@ -164,19 +202,50 @@ export default function DocumentsPage() {
               onDragLeave={() => setDrag(false)}
               onDrop={onDrop}
               className={`rounded-2xl border-2 border-dashed p-8 text-center transition-all ${
-                drag ? "border-[#0C2C55] bg-[#0C2C55]/5" : "border-slate-200 bg-white"
+                drag
+                  ? "border-[#0C2C55] bg-[#0C2C55]/5 shadow-[0_10px_30px_rgba(12,44,85,0.10)]"
+                  : uploading
+                    ? "border-[#0C2C55]/40 bg-gradient-to-b from-white to-[#0C2C55]/[0.03]"
+                    : "border-slate-200 bg-white"
               }`}
             >
               <label className="flex cursor-pointer flex-col items-center gap-2">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-                  <svg className="h-6 w-6 text-[#0C2C55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <div
+                  className={`flex h-14 w-14 items-center justify-center rounded-full transition ${
+                    uploading ? "bg-[#0C2C55]/10 animate-pulse" : "bg-slate-100"
+                  }`}
+                >
+                  <svg
+                    className={`h-6 w-6 text-[#0C2C55] ${uploading ? "animate-bounce" : ""}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 </div>
                 <span className="text-sm font-semibold text-slate-900">
-                  {uploading ? "Uploading..." : "Upload Documents"}
+                  {uploading ? "Uploading your document..." : "Upload Documents"}
                 </span>
                 <span className="text-xs text-slate-400">Drag & drop or click · PDF, DOCX, TXT</span>
+                {uploading && (
+                  <div className="mt-2 w-full max-w-xs">
+                    <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>{visualProgress >= 95 ? "Processing document..." : "Uploading document"}</span>
+                      <span className="font-semibold text-[#0C2C55]">{Math.round(visualProgress)}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-200/90 ring-1 ring-slate-200">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#0C2C55] to-[#1A4E8A] shadow-[0_0_10px_rgba(12,44,85,0.35)] transition-all duration-200 ease-out"
+                        style={{ width: `${Math.max(4, Math.round(visualProgress))}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Please wait while we securely process your file.
+                    </p>
+                  </div>
+                )}
                 <input type="file" accept=".pdf,.docx,.txt" className="hidden" disabled={uploading} onChange={onFile} />
               </label>
             </section>
