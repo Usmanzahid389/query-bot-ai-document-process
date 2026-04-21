@@ -54,6 +54,10 @@ class EditMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=16000)
 
 
+class RenameSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=512)
+
+
 class SummaryResponse(BaseModel):
     document_id: UUID
     summary: str

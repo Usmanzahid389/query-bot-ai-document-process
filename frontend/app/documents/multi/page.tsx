@@ -7,9 +7,11 @@ import { RequireAuth } from "@/components/RequireAuth";
 import {
   api,
   createBookmark,
+  deleteChatSession,
   deleteBookmarkByMessage,
   editChatMessage,
   listBookmarkedMessageIds,
+  renameChatSession,
   type ChatMessage,
   type ChatSendResponse,
   type ChatSession,
@@ -283,6 +285,26 @@ export default function MultiDocumentChatPage() {
                 title="Ask QueryBot"
                 sessions={matchingSessions}
                 sessionId={sessionId}
+                onDeleteSession={(deletedId) => {
+                  deleteChatSession(deletedId)
+                    .then(() => {
+                      setSessions((prev) => prev.filter((s) => s.id !== deletedId));
+                      if (sessionId === deletedId) {
+                        setSessionId(null);
+                        setMessages([]);
+                      }
+                    })
+                    .catch((e) => setError(e instanceof Error ? e.message : "Delete failed"));
+                }}
+                onRenameSession={(renamedId, newTitle) => {
+                  renameChatSession(renamedId, newTitle)
+                    .then((updated) => {
+                      setSessions((prev) =>
+                        prev.map((s) => (s.id === renamedId ? { ...s, title: updated.title } : s))
+                      );
+                    })
+                    .catch((e) => setError(e instanceof Error ? e.message : "Rename failed"));
+                }}
                 onSelectSession={(id) => {
                   setEditingMessageId(null);
                   setEditingDraft("");

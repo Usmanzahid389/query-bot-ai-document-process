@@ -160,6 +160,19 @@ export async function editChatMessage(messageId: string, message: string): Promi
   });
 }
 
+export async function renameChatSession(sessionId: string, title: string): Promise<ChatSession> {
+  return api<ChatSession>(`/chat/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  return api<void>(`/chat/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function listBookmarks(limit = 100): Promise<Bookmark[]> {
   return api<Bookmark[]>(`/bookmarks?limit=${encodeURIComponent(String(limit))}`);
 }
