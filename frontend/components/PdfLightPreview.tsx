@@ -104,18 +104,44 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
       const normalizedSnippet = normalizeWithSpaces(rawSnippet);
       if (!normalizedSnippet) return false;
       const snippetWords = normalizedSnippet.split(" ").filter(Boolean);
-      const firstFiveWords = snippetWords.slice(0, 5).join(" ");
-      const firstFourWords = snippetWords.slice(0, 4).join(" ");
-      const firstThreeWords = snippetWords.slice(0, 3).join(" ");
+      const noisyTokens = new Set([
+        "dr",
+        "faisal",
+        "masud",
+        "medical",
+        "ue",
+        "uoe",
+        "page",
+        "session",
+        "shift",
+      ]);
+      const baseWords = snippetWords.filter((w) => w.length >= 3 && !noisyTokens.has(w));
+      const wordsForMatch = baseWords.length >= 3 ? baseWords : snippetWords;
+      const firstFiveWords = wordsForMatch.slice(0, 5).join(" ");
+      const firstFourWords = wordsForMatch.slice(0, 4).join(" ");
+      const firstThreeWords = wordsForMatch.slice(0, 3).join(" ");
       if (!firstThreeWords) return false;
       const stop = new Set(["the", "and", "for", "with", "from", "into", "this", "that", "are", "was", "were"]);
-      const meaningfulWords = snippetWords.filter((w) => w.length >= 4 && !stop.has(w));
+      const meaningfulWords = wordsForMatch.filter((w) => w.length >= 4 && !stop.has(w));
       const midStart = Math.max(0, Math.floor(meaningfulWords.length / 2) - 2);
       const midPhrase = meaningfulWords.slice(midStart, midStart + 4).join(" ");
       // Keep candidates specific (>= 3 words) to avoid generic heading matches.
-      const phraseCandidates = [firstFiveWords, firstFourWords, firstThreeWords, midPhrase]
+      let phraseCandidates = [firstFiveWords, firstFourWords, firstThreeWords, midPhrase]
         .map((p) => p.trim())
         .filter((p) => p.split(" ").filter(Boolean).length >= 3);
+      // Add sliding windows from early content to improve stability on dense lists.
+      const windowWords = wordsForMatch.slice(0, 20);
+      for (let n = 5; n >= 3; n--) {
+        for (let i = 0; i + n <= windowWords.length; i++) {
+          const candidate = windowWords.slice(i, i + n).join(" ").trim();
+          if (candidate.split(" ").length >= 3) phraseCandidates.push(candidate);
+        }
+      }
+      phraseCandidates = Array.from(new Set(phraseCandidates));
+      if (!phraseCandidates.length) {
+        const emergencyPhrase = snippetWords.slice(0, 3).join(" ").trim();
+        if (emergencyPhrase) phraseCandidates = [emergencyPhrase];
+      }
 
       const applyVisibleHighlight = (span: HTMLSpanElement) => {
         // Bright but still minimalist highlight so it is clearly visible.
@@ -129,6 +155,13 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
       // Keep explicit spacing between spans so words don't stick together.
       const normalizedPageText = normalizedSpanTexts.join(" ").trim();
       if (!normalizedPageText) return false;
+      const pageRect = pageEl.getBoundingClientRect();
+      const isFooterSpan = (idx: number) => {
+        const r = spans[idx]?.getBoundingClientRect();
+        if (!r) return false;
+        const y = r.top - pageRect.top;
+        return y > pageRect.height * 0.86;
+      };
 
       let usedWindowFind = false;
       let bestStartIdx = -1;
@@ -136,8 +169,9 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
       let finalScore = 0;
 
       // 1) Exact phrase to spans mapping on normalized page text.
+      // Pick the most specific visible match (fewest occurrences, longest phrase).
+      let bestExact: { phrase: string; ids: number[]; score: number } | null = null;
       for (const phrase of phraseCandidates) {
-        if (matchedCount > 0) break;
         const occurrences = normalizedPageText.split(phrase).length - 1;
         if (occurrences > 2) continue; // Too generic on this page, skip.
         const idx = normalizedPageText.indexOf(phrase);
@@ -157,12 +191,21 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
           if (start < hitEnd && end > hitStart) matchedIds.push(i);
           cursor = end + 1;
         }
-        if (matchedIds.length) {
-          bestStartIdx = matchedIds[0];
-          matchedCount = matchedIds.length;
-          finalScore = 1;
-          for (const id of matchedIds) applyVisibleHighlight(spans[id]);
+        if (!matchedIds.length) continue;
+        const footerHits = matchedIds.filter((id) => isFooterSpan(id)).length;
+        const footerPenalty = footerHits / Math.max(matchedIds.length, 1);
+        const specificity = phrase.split(" ").length;
+        const rarity = 1 / Math.max(occurrences, 1);
+        const score = specificity * 2 + rarity - footerPenalty * 3;
+        if (!bestExact || score > bestExact.score) {
+          bestExact = { phrase, ids: matchedIds, score };
         }
+      }
+      if (bestExact) {
+        bestStartIdx = bestExact.ids[0];
+        matchedCount = bestExact.ids.length;
+        finalScore = 1;
+        for (const id of bestExact.ids) applyVisibleHighlight(spans[id]);
       }
 
       // 2) Safety fallback: token-window score (handles fragmented spans).
@@ -170,12 +213,13 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
         const tokens = (firstFiveWords || firstFourWords || firstThreeWords)
           .split(" ")
           .map((t) => t.trim())
-          .filter((t) => t.length >= 4 && !stop.has(t));
+          .filter((t) => t.length >= 3 && !stop.has(t));
         let bestIdx = -1;
         let bestTokenScore = 0;
         for (let i = 0; i < normalizedSpanTexts.length; i++) {
           const windowText = normalizedSpanTexts.slice(i, i + 8).join(" ");
           if (!windowText) continue;
+          if (isFooterSpan(i)) continue;
           const score = tokens.reduce((acc, t) => acc + (windowText.includes(t) ? 1 : 0), 0);
           if (score > bestTokenScore) {
             bestTokenScore = score;
@@ -203,32 +247,9 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
 
       const rect = pageEl.getBoundingClientRect();
       const inView = rect.top < window.innerHeight && rect.bottom > 0;
-      const winWithFind = window as Window & { find?: (value: string) => boolean };
-      if (inView && typeof winWithFind.find === "function") {
-        try {
-          for (const phrase of phraseCandidates) {
-            if (usedWindowFind) break;
-            usedWindowFind = !!winWithFind.find(phrase);
-          }
-          if (!usedWindowFind) {
-            usedWindowFind = !!winWithFind.find(rawSnippet);
-          }
-          console.log(`[Highlight Debug] 
-  Snippet: "${normalizedSnippet.substring(0, 30)}..."
-  Start Index: ${bestStartIdx}
-  Final Similarity: ${finalScore.toFixed(2)}
-  Spans Matched: ${matchedCount}
-  Fallback Used: ${usedWindowFind}`);
-          return usedWindowFind;
-        } catch {
-          console.log(`[Highlight Debug] 
-  Snippet: "${normalizedSnippet.substring(0, 30)}..."
-  Start Index: ${bestStartIdx}
-  Final Similarity: ${finalScore.toFixed(2)}
-  Spans Matched: ${matchedCount}
-  Fallback Used: ${usedWindowFind}`);
-          return false;
-        }
+      // Avoid browser-native find because it can jump to wrong page/match.
+      if (inView) {
+        usedWindowFind = false;
       }
       console.log(`[Highlight Debug] 
   Snippet: "${normalizedSnippet.substring(0, 30)}..."
@@ -314,14 +335,14 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
       setNotice("Loading PDF...");
       return;
     }
-    const targetPage = Number(activeCitation.pageNumber) - 1;
-    console.log("Final Jump Index:", targetPage);
-    if (!Number.isFinite(targetPage) || targetPage < 0 || targetPage >= numPages) {
+    const targetPageNumber = Number(activeCitation.pageNumber);
+    console.log("Final Jump Index:", targetPageNumber);
+    if (!Number.isFinite(targetPageNumber) || targetPageNumber < 1 || targetPageNumber > numPages) {
       setNotice(`Citation page ${activeCitation.pageNumber} is out of range.`);
       return;
     }
 
-    const pageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPage + 1}"]`);
+    const pageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPageNumber}"]`);
     if (!pageEl) {
       setNotice("Unable to locate cited page.");
       return;
@@ -347,7 +368,7 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
     const maxAttempts = 8;
     const tryHighlight = () => {
       attempts += 1;
-      const currentPageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPage + 1}"]`);
+      const currentPageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPageNumber}"]`);
       if (!currentPageEl) {
         setNotice("Unable to locate cited page.");
         return;
@@ -409,10 +430,10 @@ export function PdfLightPreview({ fileData, showToolbar = true, activeCitation =
         timestamp: pending.timestamp,
       };
       // Trigger useEffect path using same logic without mutating parent state.
-      const targetPage = Number(eventCitation.pageNumber) - 1;
-      console.log("Final Jump Index:", targetPage);
-      if (Number.isFinite(targetPage) && targetPage >= 0 && targetPage < numPages) {
-        const pageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPage + 1}"]`);
+      const targetPageNumber = Number(eventCitation.pageNumber);
+      console.log("Final Jump Index:", targetPageNumber);
+      if (Number.isFinite(targetPageNumber) && targetPageNumber >= 1 && targetPageNumber <= numPages) {
+        const pageEl = document.querySelector<HTMLElement>(`[data-page-number="${targetPageNumber}"]`);
         pageEl?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
       setNotice(null);

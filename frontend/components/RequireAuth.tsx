@@ -19,8 +19,11 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-sm text-zinc-500">
-        Checking session…
+      <div className="flex min-h-screen items-center justify-center">
+        <span
+          className="inline-block h-8 w-8 animate-spin rounded-full border-[3px] border-slate-300 border-t-[#0C2C55]"
+          aria-label="Loading"
+        />
       </div>
     );
   }
