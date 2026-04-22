@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { api, uploadDocument, type Document } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, uploadDocument, type Document, type User } from "@/lib/api";
+import { clearToken } from "@/lib/auth";
 import { RequireAuth } from "@/components/RequireAuth";
 
 export default function DocumentsPage() {
@@ -16,6 +17,9 @@ export default function DocumentsPage() {
   const [drag, setDrag] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [sidebarSearch, setSidebarSearch] = useState("");
+  const [me, setMe] = useState<User | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function onOpen() { setIsOpen(true); }
@@ -36,6 +40,24 @@ export default function DocumentsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<User>("/auth/me")
+      .then((user) => { if (!cancelled) setMe(user); })
+      .catch(() => { if (!cancelled) setMe(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    function onPointerDown(e: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, []);
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -95,6 +117,17 @@ export default function DocumentsPage() {
         : "font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900",
     ].join(" ");
   };
+
+  function displayName(email: string | undefined): string {
+    if (!email) return "User";
+    const local = (email.split("@")[0] ?? "user").replace(/[^a-zA-Z\s]/g, "");
+    return local.charAt(0).toUpperCase() + local.slice(1) || "User";
+  }
+
+  function logout() {
+    clearToken();
+    router.push("/login");
+  }
 
   return (
     <RequireAuth>
@@ -235,41 +268,59 @@ export default function DocumentsPage() {
               Bookmarks
             </Link>
           </nav>
+
+          {/* Profile / Logout — mobile only */}
+          <div className="mt-auto shrink-0 border-t border-slate-100 px-4 py-4 lg:hidden">
+            <div ref={profileMenuRef} className="relative flex items-center gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0C2C55] to-[#10386a] text-xs font-bold text-white">
+                {displayName(me?.email).charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-900">{displayName(me?.email)}</p>
+                <p className="truncate text-xs text-slate-400">{me?.email ?? ""}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfileMenu((v) => !v)}
+                aria-label="More options"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="12" cy="19" r="1.5" />
+                </svg>
+              </button>
+              {showProfileMenu && (
+                <div className="absolute bottom-10 right-0 z-50 min-w-[130px] rounded-xl border border-slate-200 bg-white shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => { setShowProfileMenu(false); logout(); }}
+                    className="flex w-full items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </aside>
 
         {/* ── Main content ── */}
         <main className="min-w-0 flex-1 overflow-y-auto">
 
-          {/* ── Mobile sub-header: hamburger + QueryBot brand (hidden on desktop) ── */}
-          <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-6 py-3 lg:hidden">
-            <button
-              type="button"
-              aria-label="Open menu"
-              onClick={() => setIsOpen(true)}
-              className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <span className="text-base font-bold tracking-tight text-[#0C2C55]"></span>
-          </div>
-
           <div className="mx-auto max-w-6xl space-y-8 px-6 py-6 lg:px-10 lg:py-8">
             <section className="space-y-1">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Documents Library</h1>
-                  <p className="text-sm text-slate-500">
-                    Manage your knowledge base and interact with your AI assistant.
-                  </p>
-                </div>
-                <Link
-                  href="/documents/multi"
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#0C2C55] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#10386a]"
-                >
-                  Multi-document chat
-                </Link>
+              <div className="space-y-1">
+                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Documents Library</h1>
+                <p className="text-sm text-slate-500">
+                  Manage your knowledge base and interact with your AI assistant.
+                </p>
               </div>
             </section>
 
