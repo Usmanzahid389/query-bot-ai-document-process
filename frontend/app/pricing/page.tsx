@@ -1,10 +1,9 @@
 "use client";
 import Link from "next/link";
-import { Manrope, Inter } from "next/font/google";
 import { Check, Zap, Shield, Building2, ArrowRight, Star } from "lucide-react";
 
-const manrope = Manrope({ subsets: ["latin"], weight: ["400", "600", "700", "800"] });
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"] });
+const manrope = { className: "" };
+const inter = { className: "" };
 
 const plans = [
   {

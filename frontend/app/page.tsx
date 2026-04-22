@@ -1,10 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Inter, Manrope } from "next/font/google";
-
-const manrope = Manrope({ subsets: ["latin"], weight: ["400", "600", "700", "800"] });
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"] });
+const manrope = { className: "" };
+const inter = { className: "" };
 
 const features = [
   {
