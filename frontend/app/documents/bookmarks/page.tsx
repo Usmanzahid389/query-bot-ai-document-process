@@ -105,9 +105,23 @@ export default function BookmarksPage() {
                           type="button"
                           onClick={() => onRemove(item)}
                           disabled={removingMessageId === item.message_id}
-                          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="ml-2 flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                          aria-label="Delete bookmark"
                         >
-                          {removingMessageId === item.message_id ? "Removing..." : "Remove"}
+                          {removingMessageId === item.message_id ? (
+                            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10" strokeOpacity=".25" />
+                              <path d="M12 2a10 10 0 0 1 10 10" />
+                            </svg>
+                          ) : (
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <rect x="5" y="6" width="14" height="14" rx="2" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                            </svg>
+                          )}
                         </button>
                       </div>
                     </div>
