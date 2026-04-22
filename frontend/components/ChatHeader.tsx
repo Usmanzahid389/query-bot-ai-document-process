@@ -11,6 +11,7 @@ interface ChatHeaderProps {
   onNewChat: () => void;
   onDeleteSession?: (id: string) => void;
   onRenameSession?: (id: string, newTitle: string) => void;
+  hideHistory?: boolean;
 }
 
 function formatSessionDate(isoString: string) {
@@ -30,6 +31,7 @@ export function ChatHeader({
   onNewChat,
   onDeleteSession,
   onRenameSession,
+  hideHistory = false,
 }: ChatHeaderProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -63,16 +65,20 @@ export function ChatHeader({
     <>
       {/* ── Header bar ─────────────────────────────────────────── */}
       <header className="relative flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <button
-          type="button"
-          aria-label="Open chat history"
-          onClick={() => setSidebarOpen(true)}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
-            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-          </svg>
-        </button>
+        {hideHistory ? (
+          <div className="h-8 w-8" />
+        ) : (
+          <button
+            type="button"
+            aria-label="Open chat history"
+            onClick={() => setSidebarOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+              <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
 
         <span className="pointer-events-none absolute inset-x-0 flex justify-center">
           <span className="text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100">{title}</span>

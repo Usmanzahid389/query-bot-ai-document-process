@@ -62,6 +62,7 @@ export default function DocumentChatPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string>(id);
+  const [showPreview, setShowPreview] = useState(false);
   const previewUrlRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -386,8 +387,8 @@ export default function DocumentChatPage() {
     <RequireAuth>
       <div className="flex h-full flex-col overflow-hidden bg-slate-100 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
         <div className="sticky top-0 z-30 w-full overflow-visible border-y border-slate-200/80 bg-white backdrop-blur-xl">
-          <div className="flex flex-col gap-2 px-4 py-3 sm:px-5 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-0 flex-1">
+          <div className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
+            <div className="min-w-0">
               <button
                 type="button"
                 onClick={() => router.push("/documents")}
@@ -400,7 +401,7 @@ export default function DocumentChatPage() {
               </button>
             </div>
 
-            <div className="flex w-full flex-col gap-1.5 xl:w-auto xl:flex-row xl:items-center xl:justify-end">
+            <div className="flex flex-row flex-wrap gap-1.5 items-center justify-end">
               <div className="group/tip relative">
                 <button
                   type="button"
@@ -500,9 +501,20 @@ export default function DocumentChatPage() {
         )}
 
         <div className="grid flex-1 min-h-0 gap-0 px-0 py-0 lg:grid-cols-2">
-          <div className="order-2 flex h-full min-h-0 flex-col rounded-t-2xl border-l border-slate-200 bg-white p-0 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2">
+          <div className={`order-2 h-full min-h-0 flex-col rounded-t-2xl border-l border-slate-200 bg-white p-0 shadow-[0_12px_30px_rgba(15,23,42,0.08)] lg:order-2 ${showPreview ? "flex" : "hidden lg:flex"}`}>
             <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-white shadow-sm dark:bg-zinc-900/40">
               <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white/90 px-4 text-sm font-semibold text-slate-900 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setShowPreview(false)}
+                  aria-label="Back to chat"
+                  className="lg:hidden mr-2 inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Chat
+                </button>
                 <div className="min-w-0 truncate text-center flex-1">
                   {selectedDocs.length > 1 && previewDoc
                     ? `${previewDocIndex + 1} of ${selectedDocs.length} files: ${previewDoc.original_filename}`
@@ -577,7 +589,21 @@ export default function DocumentChatPage() {
             </div>
           </div>
 
-          <div className="order-1 flex h-full min-h-0 flex-col bg-white p-0 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1">
+          <div className={`order-1 h-full min-h-0 flex-col bg-white p-0 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1 ${showPreview ? "hidden lg:flex" : "flex"}`}>
+            {/* Mobile-only: toggle to document preview */}
+            <div className="flex items-center justify-end border-b border-slate-100 bg-white px-4 py-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setShowPreview(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                  <path d="M14 2v5h5" />
+                </svg>
+                View Document
+              </button>
+            </div>
             <ChatHeader
               title="Ask QueryBot"
               sessions={sessions}

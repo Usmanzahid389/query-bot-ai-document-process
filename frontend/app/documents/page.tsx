@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { api, uploadDocumentWithProgress, type Document } from "@/lib/api";
+import { api, uploadDocument, type Document } from "@/lib/api";
 import { RequireAuth } from "@/components/RequireAuth";
 
 export default function DocumentsPage() {
@@ -13,11 +13,15 @@ export default function DocumentsPage() {
   const [docs, setDocs] = useState<Document[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [displayProgress, setDisplayProgress] = useState(0);
   const [drag, setDrag] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [sidebarSearch, setSidebarSearch] = useState("");
+
+  useEffect(() => {
+    function onOpen() { setIsOpen(true); }
+    window.addEventListener("sidebar:open", onOpen);
+    return () => window.removeEventListener("sidebar:open", onOpen);
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -33,52 +37,17 @@ export default function DocumentsPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    if (!uploading) {
-      if (uploadProgress >= 100) {
-        setDisplayProgress(100);
-        const t = window.setTimeout(() => {
-          setUploadProgress(0);
-          setDisplayProgress(0);
-        }, 650);
-        return () => window.clearTimeout(t);
-      }
-      setDisplayProgress(0);
-      return;
-    }
-
-    const target = uploadProgress >= 100 ? 100 : Math.min(uploadProgress, 94);
-    const t = window.setInterval(() => {
-      setDisplayProgress((prev) => {
-        if (prev >= target) return prev;
-        // Smooth, generic easing feel.
-        const step = Math.max(0.6, (target - prev) * 0.16);
-        return Math.min(target, prev + step);
-      });
-    }, 90);
-    return () => window.clearInterval(t);
-  }, [uploading, uploadProgress]);
-
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setUploading(true);
-    setUploadProgress(0);
     setError(null);
-    let completed = false;
     try {
-      await uploadDocumentWithProgress(file, (percent) => setUploadProgress(percent));
-      setUploadProgress(100);
+      await uploadDocument(file);
       await load();
-      completed = true;
-      // Keep 100% visible briefly so completion feels natural.
-      await new Promise((resolve) => window.setTimeout(resolve, 300));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
-      if (completed) {
-        setUploadProgress(0);
-      }
     }
   }
 
@@ -88,22 +57,15 @@ export default function DocumentsPage() {
     e.target.value = "";
   }
 
-  function requestDeleteDocument(document: Document) {
-    setDeleteTarget(document);
-  }
-
-  async function confirmDeleteDocument() {
-    if (!deleteTarget) return;
+  async function deleteDocument(document: Document) {
+    const ok = window.confirm(`Delete "${document.original_filename}"? This cannot be undone.`);
+    if (!ok) return;
     setError(null);
-    setDeletingId(deleteTarget.id);
     try {
-      await api<void>(`/documents/${deleteTarget.id}`, { method: "DELETE" });
+      await api<void>(`/documents/${document.id}`, { method: "DELETE" });
       await load();
-      setDeleteTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
-    } finally {
-      setDeletingId(null);
     }
   }
 
@@ -123,7 +85,6 @@ export default function DocumentsPage() {
   const filteredFiles = docs.filter((file) =>
     file.original_filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const visualProgress = uploading || uploadProgress >= 100 ? Math.min(displayProgress, 100) : 0;
 
   const sidebarLinkClass = (href: string) => {
     const isActive = pathname === href;
@@ -138,8 +99,99 @@ export default function DocumentsPage() {
   return (
     <RequireAuth>
       <div className="flex min-h-screen bg-slate-50">
+        {/* ── Backdrop (mobile only) ── */}
+        {isOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setIsOpen(false)}
+          />
+        )}
+
         {/* ── Sidebar ── */}
-        <aside className="sticky top-0 flex h-screen w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white">
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex h-full w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 ${
+            isOpen ? "translate-x-0 shadow-xl" : "-translate-x-full"
+          }`}
+        >
+          {/* Close button — mobile only */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 lg:hidden">
+            <span className="text-sm font-semibold text-slate-700">Menu</span>
+            <button
+              type="button"
+              aria-label="Close menu"
+              onClick={() => setIsOpen(false)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          {/* Search — mobile only (header search is hidden on small screens) */}
+          <div className="border-b border-slate-100 px-3 py-3 lg:hidden">
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
+                <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="11" cy="11" r="8" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
+                placeholder="Search documents..."
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none"
+              />
+              {sidebarSearch && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarSearch("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-slate-400 hover:text-slate-600"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Inline results */}
+            {sidebarSearch.trim() && (
+              <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                {docs.filter((d) =>
+                  d.original_filename.toLowerCase().includes(sidebarSearch.trim().toLowerCase())
+                ).length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-slate-400">No documents found</p>
+                ) : (
+                  <ul className="max-h-52 divide-y divide-slate-50 overflow-y-auto">
+                    {docs
+                      .filter((d) =>
+                        d.original_filename.toLowerCase().includes(sidebarSearch.trim().toLowerCase())
+                      )
+                      .slice(0, 8)
+                      .map((d) => (
+                        <li key={d.id}>
+                          <button
+                            type="button"
+                            onClick={() => { router.push(`/documents/${d.id}`); setIsOpen(false); setSidebarSearch(""); }}
+                            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-slate-50"
+                          >
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-[#0C2C55] to-[#10386a]">
+                              <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                            <span className="truncate text-sm font-medium text-slate-800">{d.original_filename}</span>
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Nav links */}
           <nav className="flex-1 space-y-1 px-3 py-4">
             <Link
@@ -186,12 +238,28 @@ export default function DocumentsPage() {
         </aside>
 
         {/* ── Main content ── */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl space-y-8 px-6 py-8 lg:px-10">
+        <main className="min-w-0 flex-1 overflow-y-auto">
+
+          {/* ── Mobile sub-header: hamburger + QueryBot brand (hidden on desktop) ── */}
+          <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white px-6 py-3 lg:hidden">
+            <button
+              type="button"
+              aria-label="Open menu"
+              onClick={() => setIsOpen(true)}
+              className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <span className="text-base font-bold tracking-tight text-[#0C2C55]"></span>
+          </div>
+
+          <div className="mx-auto max-w-6xl space-y-8 px-6 py-6 lg:px-10 lg:py-8">
             <section className="space-y-1">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Documents Library</h1>
+                  <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Documents Library</h1>
                   <p className="text-sm text-slate-500">
                     Manage your knowledge base and interact with your AI assistant.
                   </p>
@@ -211,50 +279,19 @@ export default function DocumentsPage() {
               onDragLeave={() => setDrag(false)}
               onDrop={onDrop}
               className={`rounded-2xl border-2 border-dashed p-8 text-center transition-all ${
-                drag
-                  ? "border-[#0C2C55] bg-[#0C2C55]/5 shadow-[0_10px_30px_rgba(12,44,85,0.10)]"
-                  : uploading
-                    ? "border-[#0C2C55]/40 bg-gradient-to-b from-white to-[#0C2C55]/[0.03]"
-                    : "border-slate-200 bg-white"
+                drag ? "border-[#0C2C55] bg-[#0C2C55]/5" : "border-slate-200 bg-white"
               }`}
             >
               <label className="flex cursor-pointer flex-col items-center gap-2">
-                <div
-                  className={`flex h-14 w-14 items-center justify-center rounded-full transition ${
-                    uploading ? "bg-[#0C2C55]/10 animate-pulse" : "bg-slate-100"
-                  }`}
-                >
-                  <svg
-                    className={`h-6 w-6 text-[#0C2C55] ${uploading ? "animate-bounce" : ""}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                  <svg className="h-6 w-6 text-[#0C2C55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 </div>
                 <span className="text-sm font-semibold text-slate-900">
-                  {uploading ? "Uploading your document..." : "Upload Documents"}
+                  {uploading ? "Uploading..." : "Upload Documents"}
                 </span>
                 <span className="text-xs text-slate-400">Drag & drop or click · PDF, DOCX, TXT</span>
-                {uploading && (
-                  <div className="mt-2 w-full max-w-xs">
-                    <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
-                      <span>{visualProgress >= 95 ? "Processing document..." : "Uploading document"}</span>
-                      <span className="font-semibold text-[#0C2C55]">{Math.round(visualProgress)}%</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-200/90 ring-1 ring-slate-200">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#0C2C55] to-[#1A4E8A] shadow-[0_0_10px_rgba(12,44,85,0.35)] transition-all duration-200 ease-out"
-                        style={{ width: `${Math.max(4, Math.round(visualProgress))}%` }}
-                      />
-                    </div>
-                    <p className="mt-1 text-[10px] text-slate-400">
-                      Please wait while we securely process your file.
-                    </p>
-                  </div>
-                )}
                 <input type="file" accept=".pdf,.docx,.txt" className="hidden" disabled={uploading} onChange={onFile} />
               </label>
             </section>
@@ -295,7 +332,8 @@ export default function DocumentsPage() {
                 </div>
               ) : (
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <table className="w-full">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[620px]">
                     <thead>
                       <tr className="bg-gradient-to-r from-[#0C2C55] to-[#10386a]">
                         <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-white/90">File Name</th>
@@ -340,11 +378,10 @@ export default function DocumentsPage() {
                               </Link>
                               <button
                                 type="button"
-                                onClick={() => requestDeleteDocument(d)}
+                                onClick={() => void deleteDocument(d)}
                                 aria-label={`Delete ${d.original_filename}`}
                                 title="Delete document"
-                                disabled={deletingId === d.id}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-black transition hover:border-black hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-black transition hover:border-black hover:bg-slate-50"
                               >
                                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <path d="M3 6h18" strokeLinecap="round" />
@@ -359,42 +396,13 @@ export default function DocumentsPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </section>
           </div>
         </main>
       </div>
-
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
-            <h3 className="text-base font-bold text-slate-900">Delete document?</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              This will permanently remove{" "}
-              <span className="font-semibold text-slate-900">{deleteTarget.original_filename}</span>.
-            </p>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                disabled={deletingId === deleteTarget.id}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmDeleteDocument()}
-                disabled={deletingId === deleteTarget.id}
-                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {deletingId === deleteTarget.id ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </RequireAuth>
   );
 }

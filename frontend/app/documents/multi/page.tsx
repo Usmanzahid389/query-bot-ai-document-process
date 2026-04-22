@@ -53,7 +53,7 @@ export default function MultiDocumentChatPage() {
 
   // ── Preview panel state ────────────────────────────────────
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
-  const [previewPanelOpen, setPreviewPanelOpen] = useState(true);
+  const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
   const [pdfEntry, setPdfEntry] = useState<{ docId: string; data: Uint8Array } | null>(null);
   // Only expose the buffer when it belongs to the currently active doc, preventing
   // detached-ArrayBuffer errors when the user navigates between files.
@@ -64,6 +64,11 @@ export default function MultiDocumentChatPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+
+  // Open preview panel by default on xl+ screens (after hydration)
+  useEffect(() => {
+    if (window.innerWidth >= 1280) setPreviewPanelOpen(true);
+  }, []);
 
   // Keep previewDocId in sync with selectedIds
   useEffect(() => {
@@ -409,7 +414,7 @@ export default function MultiDocumentChatPage() {
             <p className="truncate text-xs text-slate-500">
               {selectedIds.length > 0
                 ? `${selectedIds.length} document${selectedIds.length > 1 ? "s" : ""} selected`
-                : "Select documents from the left panel to begin"}
+                : "Select documents to begin"}
             </p>
           </div>
 
@@ -420,7 +425,7 @@ export default function MultiDocumentChatPage() {
                 type="button"
                 aria-label="Toggle document preview"
                 onClick={() => setPreviewPanelOpen((p) => !p)}
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition hover:border-slate-300 hover:text-slate-800 xl:hidden ${
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition hover:border-slate-300 hover:text-slate-800 lg:hidden ${
                   previewPanelOpen
                     ? "border-[#0C2C55] bg-[#0C2C55] text-white"
                     : "border-slate-200 bg-white text-slate-500"
@@ -438,7 +443,7 @@ export default function MultiDocumentChatPage() {
               type="button"
               aria-label="Toggle document picker"
               onClick={() => setMobilePickerOpen((p) => !p)}
-              className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-800 lg:hidden"
+              className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-800 xl:hidden"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" strokeLinecap="round" strokeLinejoin="round" />
@@ -505,7 +510,7 @@ export default function MultiDocumentChatPage() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
 
           {/* ── Left: Document picker panel (desktop) ──────────── */}
-          <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+          <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white xl:flex">
             <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
               <span className="text-sm font-semibold text-slate-800">Documents</span>
               {selectedIds.length > 0 && (
@@ -554,6 +559,7 @@ export default function MultiDocumentChatPage() {
             {/* ChatHeader (slide-over sidebar for history) */}
             <ChatHeader
               title="Ask QueryBot"
+              hideHistory
               sessions={matchingSessions}
               sessionId={sessionId}
               onSelectSession={(id) => {
@@ -716,7 +722,7 @@ export default function MultiDocumentChatPage() {
 
           {/* ── Right: Document preview panel ──────────────────── */}
           {selectedIds.length > 0 && previewPanelOpen && (
-            <div className="hidden w-[420px] shrink-0 flex-col border-l border-slate-200 bg-white xl:flex">
+            <div className="hidden w-[420px] shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
               {/* File navigator header */}
               {(() => {
                 const total = selectedDocs.length;
@@ -814,7 +820,7 @@ export default function MultiDocumentChatPage() {
 
           {/* Collapsed preview — re-open button (xl only, when panel was closed) */}
           {selectedIds.length > 0 && !previewPanelOpen && (
-            <div className="hidden xl:flex shrink-0 flex-col items-center border-l border-slate-200 bg-white py-3 px-1.5">
+            <div className="hidden lg:flex shrink-0 flex-col items-center border-l border-slate-200 bg-white py-3 px-1.5">
               <button
                 type="button"
                 aria-label="Open document preview"
@@ -831,7 +837,7 @@ export default function MultiDocumentChatPage() {
 
           {/* Mobile preview drawer (below chat, toggled from top bar) */}
           {selectedIds.length > 0 && previewPanelOpen && (
-            <div className="fixed inset-0 z-50 flex flex-col bg-white xl:hidden">
+            <div className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
               {/* Drawer header — file navigator */}
               {(() => {
                 const total = selectedDocs.length;
