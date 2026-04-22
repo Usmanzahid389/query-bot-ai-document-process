@@ -20,6 +20,7 @@ export function Nav() {
   const profileRef = useRef<HTMLDivElement | null>(null);
 
   const showDocumentSearch = pathname === "/documents" || pathname.startsWith("/documents/");
+  const isDocumentsPage = pathname === "/documents";
   const searchQuery = search.trim();
 
   const filteredDocuments = useMemo(() => {
@@ -171,9 +172,9 @@ export function Nav() {
             </span>
           </Link>
         </div>
-        <div className="hidden justify-center sm:flex">
+        <div className={`hidden justify-center ${isDocumentsPage ? "lg:flex" : "sm:flex"}`} style={{ flex: 1 }}>
           {loggedIn && showDocumentSearch && (
-            <div ref={searchWrapRef} className="w-full max-w-xl">
+            <div ref={searchWrapRef} className="w-full max-w-xl mx-8">
               <div className="relative">
                 <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">
                   <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -261,7 +262,20 @@ export function Nav() {
         {/* ── Col 3: Profile / Auth (right) ── */}
         <nav className="flex items-center justify-end gap-3 text-sm">
           {loggedIn ? (
-            <div ref={profileRef} className="relative">
+            <>
+              {isDocumentsPage && (
+                <button
+                  type="button"
+                  aria-label="Open menu"
+                  onClick={() => window.dispatchEvent(new Event("sidebar:open"))}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 lg:hidden"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              )}
+              <div ref={profileRef} className={`relative${isDocumentsPage ? " hidden lg:block" : ""}`}>
               <button
                 type="button"
                 onClick={() => setShowProfileMenu((prev) => !prev)}
@@ -306,6 +320,7 @@ export function Nav() {
                 </div>
               )}
             </div>
+            </>
           ) : (
             <>
               <Link className={navLinkClass("/login")} href="/login">

@@ -12,6 +12,7 @@ interface ChatHeaderProps {
   onDeleteSession?: (id: string) => void;
   onRenameSession?: (id: string, newTitle: string) => void;
   hideHistory?: boolean;
+  actions?: React.ReactNode;
 }
 
 function formatSessionDate(isoString: string) {
@@ -32,6 +33,7 @@ export function ChatHeader({
   onDeleteSession,
   onRenameSession,
   hideHistory = false,
+  actions,
 }: ChatHeaderProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -95,6 +97,7 @@ export function ChatHeader({
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+        {actions}
       </header>
 
       {/* ── Backdrop ────────────────────────────────────────────── */}

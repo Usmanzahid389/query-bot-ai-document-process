@@ -58,6 +58,28 @@ export default function DocumentChatPage() {
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
   const [textFilePreview, setTextFilePreview] = useState<string | null>(null);
+
+  // --- Document search state ---
+  const [showDocSearch, setShowDocSearch] = useState(false);
+  const [docSearch, setDocSearch] = useState("");
+  const [allDocs, setAllDocs] = useState<Document[]>([]);
+  const docSearchRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showDocSearch) return;
+    api<Document[]>("/documents").then(setAllDocs).catch(() => setAllDocs([]));
+  }, [showDocSearch]);
+
+  useEffect(() => {
+    if (!showDocSearch) return;
+    function onPointerDown(e: MouseEvent) {
+      if (docSearchRef.current && !docSearchRef.current.contains(e.target as Node)) {
+        setShowDocSearch(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showDocSearch]);
   const [previewKind, setPreviewKind] = useState<"pdf" | "text" | "office" | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -294,19 +316,31 @@ export default function DocumentChatPage() {
   }
 
   async function onSaveInlineEdit(messageId: string) {
-    if (!editingDraft.trim()) return;
+    const draft = editingDraft.trim();
+    if (!draft) return;
     setSending(true);
-    setThinking(true);
     setError(null);
+
+    // Immediately update the edited message content and remove everything after it
+    // so the old assistant reply disappears and ThinkingBubble takes its place
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === messageId);
+      if (idx === -1) return prev;
+      return prev.slice(0, idx + 1).map((m) =>
+        m.id === messageId ? { ...m, content: draft } : m
+      );
+    });
+    setEditingMessageId(null);
+    setEditingDraft("");
+    setThinking(true);
+
     try {
       const [res] = await Promise.all([
-        editChatMessage(messageId, editingDraft.trim()),
+        editChatMessage(messageId, draft),
         new Promise((resolve) => window.setTimeout(resolve, 1200)),
       ]);
       setThinking(false);
       setSessionId(res.session_id);
-      setEditingMessageId(null);
-      setEditingDraft("");
       setEditedMessageIds((prev) => new Set(prev).add(res.user_message.id));
       setMessageSources((prev) => ({
         ...prev,
@@ -388,7 +422,7 @@ export default function DocumentChatPage() {
       <div className="flex h-full flex-col overflow-hidden bg-slate-100 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
         <div className="sticky top-0 z-30 w-full overflow-visible border-y border-slate-200/80 bg-white backdrop-blur-xl">
           <div className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
-            <div className="min-w-0">
+            <div className="min-w-0 flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => router.push("/documents")}
@@ -396,12 +430,81 @@ export default function DocumentChatPage() {
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 transition hover:border-slate-300 hover:text-slate-800 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
+              {/* Search icon and dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="Search documents"
+                  className={`ml-1 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 transition hover:border-slate-300 hover:text-slate-800 ${showDocSearch ? "bg-slate-100" : ""}`}
+                  onClick={() => setShowDocSearch((v) => !v)}
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+                  </svg>
+                </button>
+                {showDocSearch && (
+                  <div ref={docSearchRef} className="absolute left-0 top-12 z-50 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={docSearch}
+                      onChange={e => setDocSearch(e.target.value)}
+                      placeholder="Search documents..."
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 px-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-300 focus:outline-none"
+                    />
+                    <div className="mt-2 max-h-60 overflow-y-auto">
+                      {allDocs.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-slate-400">No documents found</div>
+                      ) : (
+                        <ul>
+                          {allDocs.filter(d => d.original_filename.toLowerCase().includes(docSearch.trim().toLowerCase())).slice(0, 10).map(d => (
+                            <li key={d.id}>
+                              <button
+                                type="button"
+                                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50 ${d.id === id ? "bg-slate-100 font-bold" : ""}`}
+                                onClick={() => { setShowDocSearch(false); router.push(`/documents/${d.id}`); }}
+                              >
+                                <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                <span className="truncate">{d.original_filename}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-row flex-wrap gap-1.5 items-center justify-end">
+              {/* View Document — mobile only icon toggle */}
+              <div className="group/tip relative lg:hidden">
+                <button
+                  type="button"
+                  aria-label={showPreview ? "Back to chat" : "View document"}
+                  onClick={() => setShowPreview((v) => !v)}
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition duration-200 ${
+                    showPreview
+                      ? "border-[#0C2C55] bg-[#0C2C55] text-white"
+                      : "border-[#0C2C55]/15 bg-slate-100 text-[#0C2C55] hover:-translate-y-0.5 hover:border-[#0C2C55] hover:bg-[#0C2C55] hover:text-white"
+                  } active:border-[#0C2C55] active:bg-[#0C2C55] active:text-white`}
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                    <path d="M14 2v5h5" />
+                  </svg>
+                </button>
+                <span className="pointer-events-none absolute -bottom-8 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded bg-[#0C2C55] px-2 py-1 text-[11px] text-white opacity-0 transition-opacity group-hover/tip:opacity-100">
+                  {showPreview ? "Back to chat" : "View document"}
+                </span>
+              </div>
               <div className="group/tip relative">
                 <button
                   type="button"
@@ -590,20 +693,6 @@ export default function DocumentChatPage() {
           </div>
 
           <div className={`order-1 h-full min-h-0 flex-col bg-white p-0 shadow-[0_14px_34px_rgba(12,44,85,0.16)] dark:bg-zinc-900/40 lg:order-1 ${showPreview ? "hidden lg:flex" : "flex"}`}>
-            {/* Mobile-only: toggle to document preview */}
-            <div className="flex items-center justify-end border-b border-slate-100 bg-white px-4 py-2 lg:hidden">
-              <button
-                type="button"
-                onClick={() => setShowPreview(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
-                  <path d="M14 2v5h5" />
-                </svg>
-                View Document
-              </button>
-            </div>
             <ChatHeader
               title="Ask QueryBot"
               sessions={sessions}
