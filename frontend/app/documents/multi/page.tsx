@@ -109,7 +109,9 @@ export default function MultiDocumentChatPage() {
       try {
         const blob = await fetchDocumentFile(previewDoc.id);
         const mt = previewDoc.mime_type.toLowerCase();
-        if (mt.includes("pdf")) {
+        const blobType = (blob.type || "").toLowerCase();
+        const isPdfPreview = blobType.includes("pdf") || mt.includes("pdf");
+        if (isPdfPreview) {
           const buffer = await blob.arrayBuffer();
           if (!cancelled) { setPdfEntry({ docId: previewDoc.id, data: new Uint8Array(buffer) }); setPreviewKind("pdf"); }
         } else if (mt.startsWith("text/")) {

@@ -136,7 +136,9 @@ export default function DocumentChatPage() {
       try {
         const blob = await fetchDocumentFile(previewDoc.id);
         const mt = previewDoc.mime_type.toLowerCase();
-        if (mt.includes("pdf")) {
+        const blobType = (blob.type || "").toLowerCase();
+        const isPdfPreview = blobType.includes("pdf") || mt.includes("pdf");
+        if (isPdfPreview) {
           const buffer = await blob.arrayBuffer();
           if (!cancelled) {
             setPdfData(new Uint8Array(buffer));

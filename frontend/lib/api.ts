@@ -128,12 +128,12 @@ export async function uploadDocumentWithProgress(
   });
 }
 
-/** Fetch raw file bytes (auth). Use createObjectURL for PDF preview in iframe. */
+/** Fetch preview bytes (auth). DOCX uses converted PDF when available. */
 export async function fetchDocumentFile(documentId: string): Promise<Blob> {
   const token = getToken();
   const headers = new Headers();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(`${API}/documents/${documentId}/file`, { headers });
+  const res = await fetch(`${API}/documents/${documentId}/preview`, { headers });
   if (!res.ok) throw new Error(await parseError(res));
   return res.blob();
 }

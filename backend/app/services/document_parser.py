@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -9,6 +10,8 @@ from pathlib import Path
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_LIBREOFFICE_SOFFICE = Path(r"C:\Program Files\LibreOffice\program\soffice.exe")
 
 # Hybrid: merge PyMuPDF into OpenDataLoader when ODL looks light vs PyMuPDF or vs page count.
 _PYMUPDF_CHAR_RATIO = 1.3  # merge if len(pym) > len(odl) * this
@@ -289,3 +292,65 @@ def extract_pages_from_file(path: Path, mime_type: str) -> list[tuple[int, str]]
 def extract_text_from_file(path: Path, mime_type: str) -> str:
     parts = [t for _, t in extract_pages_from_file(path, mime_type)]
     return "\n\n".join(parts).strip()
+
+
+def convert_to_pdf(source_path: Path, output_dir: Path) -> Path | None:
+    """
+    Convert a DOCX file to PDF using LibreOffice headless mode.
+    This keeps layout fidelity higher than hand-rolled renderers.
+    """
+    src = Path(source_path)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if src.suffix.lower() != ".docx":
+        logger.warning("convert_to_pdf called with non-DOCX file: %s", src)
+        return None
+
+    if not src.is_file():
+        logger.warning("DOCX file not found for preview conversion: %s", src)
+        return None
+
+    if not _LIBREOFFICE_SOFFICE.is_file():
+        logger.warning(
+            "LibreOffice not found at expected path, skipping preview conversion: %s",
+            _LIBREOFFICE_SOFFICE,
+        )
+        return None
+
+    cmd = [
+        str(_LIBREOFFICE_SOFFICE),
+        "--headless",
+        "--convert-to",
+        "pdf:writer_pdf_Export",
+        "--outdir",
+        str(out_dir),
+        str(src),
+    ]
+    try:
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.CalledProcessError as exc:
+        logger.warning(
+            "DOCX->PDF conversion failed for %s: %s",
+            src.name,
+            (exc.stderr or exc.stdout or str(exc)).strip(),
+        )
+        return None
+    except subprocess.TimeoutExpired:
+        logger.warning("DOCX->PDF conversion timed out for %s", src.name)
+        return None
+    except Exception:
+        logger.exception("Unexpected error during DOCX->PDF conversion for %s", src.name)
+        return None
+
+    pdf_path = out_dir / f"{src.stem}.pdf"
+    if not pdf_path.is_file():
+        logger.warning("Expected converted PDF not found: %s", pdf_path)
+        return None
+    return pdf_path
