@@ -339,7 +339,29 @@ export default function DocumentsPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 </div>
-                <span className="text-sm font-semibold text-slate-900">
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  {uploading && (
+                    <svg
+                      className="h-4 w-4 animate-spin text-[#0C2C55]"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-90"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
+                  )}
                   {uploading ? "Uploading..." : "Upload Documents"}
                 </span>
                 <span className="text-xs text-slate-400">Drag & drop or click · PDF, DOCX, TXT</span>
