@@ -132,7 +132,7 @@ export default function Home() {
         </div>
       </div>
     )}
-    <div className={`${manrope.className} relative left-1/2 w-screen -translate-x-1/2 overflow-x-hidden bg-slate-100 text-slate-900`}>
+    <div className={`${manrope.className} w-full overflow-x-hidden bg-slate-100 text-slate-900`}>
       <main className={inter.className}>
         <section className="relative overflow-hidden px-5 pb-28 pt-8 sm:px-6 sm:pt-12 lg:px-4 xl:px-6">
           <div className="pointer-events-none absolute inset-0 -z-10">
