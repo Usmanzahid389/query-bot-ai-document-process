@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ from app.models.document import Document
 from app.models.user import User
 from app.schemas.chat import SummaryResponse
 from app.schemas.document import DocumentOut, ReindexResponse
-from app.services.document_parser import extract_pages_from_file, extract_text_from_file
+from app.services.document_parser import convert_to_pdf, extract_pages_from_file, extract_text_from_file
 from app.services import rag_service
 
 logger = logging.getLogger(__name__)
@@ -50,8 +50,14 @@ def _document_to_out(d: Document) -> DocumentOut:
     )
 
 
+def _convert_docx_preview_task(path: Path) -> None:
+    previews_dir = settings.upload_dir.parent / "previews"
+    convert_to_pdf(path, previews_dir)
+
+
 @router.post("/upload", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     current: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
@@ -121,6 +127,9 @@ async def upload_document(
             doc.id,
         )
 
+    if suffix == ".docx":
+        background_tasks.add_task(_convert_docx_preview_task, path)
+
     return _document_to_out(doc)
 
 
@@ -156,6 +165,46 @@ async def get_document_file(
         path=path,
         media_type=doc.mime_type,
         filename=doc.original_filename,
+        content_disposition_type="inline",
+    )
+
+
+@router.get("/{document_id}/preview")
+async def get_document_preview(
+    document_id: uuid.UUID,
+    current: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FileResponse:
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == current.id)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    original_path = Path(doc.stored_path)
+    if not original_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    # Native PDFs can be previewed directly without conversion.
+    if doc.mime_type == "application/pdf" or original_path.suffix.lower() == ".pdf":
+        return FileResponse(
+            path=original_path,
+            media_type="application/pdf",
+            filename=doc.original_filename,
+            content_disposition_type="inline",
+        )
+
+    previews_dir = settings.upload_dir.parent / "previews"
+    preview_path = previews_dir / f"{original_path.stem}.pdf"
+    if not preview_path.is_file():
+        raise HTTPException(status_code=404, detail="Preview not found")
+
+    preview_name = f"{Path(doc.original_filename).stem}.pdf"
+    return FileResponse(
+        path=preview_path,
+        media_type="application/pdf",
+        filename=preview_name,
         content_disposition_type="inline",
     )
 
