@@ -434,7 +434,7 @@ export default function DocumentChatPage() {
                 </svg>
               </button>
               {/* Search icon and dropdown */}
-              <div className="relative">
+              <div className="relative lg:hidden">
                 <button
                   type="button"
                   aria-label="Search documents"

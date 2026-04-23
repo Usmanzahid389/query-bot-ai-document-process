@@ -1,18 +1,7 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 import { Nav } from "@/components/Nav";
+import { fonts } from "@/lib/fonts";
 import "./globals.css";
-
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
 
 export const metadata: Metadata = {
   title: "QueryBot — Ask your documents",
@@ -27,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} flex h-dvh flex-col overflow-hidden bg-slate-100 font-sans antialiased dark:bg-zinc-950`}
+        className={`${fonts.rubik.className} ${fonts.rubik.variable} flex h-dvh flex-col overflow-hidden bg-slate-100 antialiased dark:bg-zinc-950`}
       >
         <Nav />
         <main className="flex-1 min-h-0 w-full overflow-auto">{children}</main>
