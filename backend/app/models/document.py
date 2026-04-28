@@ -7,6 +7,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.document_block import DocumentBlock
 
 
 class Document(Base):
@@ -26,4 +27,9 @@ class Document(Base):
     user: Mapped["User"] = relationship(back_populates="documents")
     session_links: Mapped[list["ChatSessionDocument"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
+    )
+    blocks: Mapped[list[DocumentBlock]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by=DocumentBlock.position,
     )

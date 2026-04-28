@@ -71,7 +71,7 @@ App: `http://localhost:3000` — register, upload PDF/DOCX/TXT (≤ 10 MB), chat
 
 ## MVP notes
 
-- All LLM output is **mocked** in `backend/app/services/ai_service.py`; routes and DB stay stable for a future RAG swap.
+- All AI output is **mocked** in `backend/app/services/ai_service.py`; routes and DB stay stable for future model integration.
 - English UI; extracted text is stored for each upload (text-based PDFs/DOCX; no OCR).
 
 ## Production hints

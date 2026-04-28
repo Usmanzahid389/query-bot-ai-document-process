@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from typing import Annotated
 
@@ -9,14 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.chat import ChatSession, Message
 from app.models.document import Document
 from app.models.user import User
-from app.services import rag_service
+from app.services import ai_service
 from app.services.export_render import render_docx, render_pdf
+from app.services.rag.qa import summarize_document as rag_summarize_document
 
 router = APIRouter(prefix="/export", tags=["export"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/chat/{session_id}")
@@ -80,13 +84,27 @@ async def export_summary(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    summary = await asyncio.to_thread(
-        rag_service.summarize_document_rag,
-        current.id,
-        doc.id,
-        doc.original_filename,
-        doc.extracted_text or "",
-    )
+    if settings.rag_enabled and (settings.llm_api_key or "").strip():
+        try:
+            summary = await asyncio.to_thread(
+                rag_summarize_document,
+                current.id,
+                document_id,
+                doc.original_filename,
+            )
+        except Exception:
+            logger.exception("RAG summary export failed; mock fallback")
+            summary = await asyncio.to_thread(
+                ai_service.mock_summary,
+                doc.original_filename,
+                doc.extracted_text or "",
+            )
+    else:
+        summary = await asyncio.to_thread(
+            ai_service.mock_summary,
+            doc.original_filename,
+            doc.extracted_text or "",
+        )
     title = f"Summary — {doc.original_filename}"
     paras = [p.strip() for p in summary.split("\n\n") if p.strip()]
     if fmt == "pdf":

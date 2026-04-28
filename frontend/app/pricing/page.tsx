@@ -38,7 +38,7 @@ const plans = [
       "100 MB file size limit",
       "Unlimited chat messages",
       "PDF, Word, TXT & more",
-      "RAG-powered smart search",
+      "Smart document search",
       "Export (PDF, Word, Markdown)",
       "Priority email support",
     ],

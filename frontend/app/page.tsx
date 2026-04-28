@@ -18,11 +18,11 @@ const features = [
     ),
   },
   {
-    title: "Smart Search (RAG)",
-    desc: "Retrieval Augmented Generation keeps answers grounded in your source documents.",
+    title: "Smart Search",
+    desc: "Search your document content quickly with focused context discovery.",
     accent: "bg-[#0C2C55]/10 text-[#0C2C55]",
     cta: "See retrieval flow",
-    ctaNote: "Chunk ranking, relevance scoring, and source-grounded responses.",
+    ctaNote: "Fast relevance matching and source-aware responses.",
     icon: (
       <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8">
         <circle cx="11" cy="11" r="6" />
@@ -213,7 +213,7 @@ export default function Home() {
                 <span className="text-[#0C2C55]">Knowledge Flow</span>
               </h2>
               <div className="space-y-4">
-                {["Upload", "Chunking and Embeddings", "AI Answer"].map((step, idx) => (
+                {["Upload", "Document Processing", "AI Answer"].map((step, idx) => (
                   <div key={step} className="flex items-start gap-4 rounded-2xl bg-white/75 p-4 shadow-sm ring-1 ring-slate-200/70">
                     <div className="flex flex-col items-center">
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0C2C55] text-sm font-bold text-white shadow-sm">
@@ -225,7 +225,7 @@ export default function Home() {
                       <h4 className={`${manrope.className} mb-1 text-lg font-bold text-slate-900`}>{step}</h4>
                       <p className="text-sm leading-relaxed text-slate-600">
                         {idx === 0 && "Drag and drop PDFs, Docs, or text files securely."}
-                        {idx === 1 && "AI parses context at paragraph level for semantic retrieval."}
+                        {idx === 1 && "The system processes extracted text to prepare document context."}
                         {idx === 2 && "Ask naturally and get instant answers backed by sources."}
                       </p>
                     </div>

@@ -4,6 +4,13 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class ReindexQueuedResponse(BaseModel):
+    """RAG reindex is scheduled; completion is asynchronous."""
+
+    queued: bool = True
+    message: str = "Reindex started in background"
+
+
 class DocumentOut(BaseModel):
     id: UUID
     original_filename: str
@@ -13,8 +20,3 @@ class DocumentOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-
-
-class ReindexResponse(BaseModel):
-    total_documents: int
-    reindexed_documents: int

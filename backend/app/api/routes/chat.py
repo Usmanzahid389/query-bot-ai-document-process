@@ -24,11 +24,11 @@ from app.schemas.chat import (
     RenameSessionRequest,
     SendMessageRequest,
 )
-from app.services import rag_service
-
-logger = logging.getLogger(__name__)
+from app.services import ai_service
+from app.services.rag.qa import answer_question as rag_answer_question
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 async def _get_owned_documents(
@@ -56,38 +56,47 @@ async def _generate_assistant_reply(
     docs: list[Document],
     question: str,
 ) -> tuple[str, list[dict[str, object]]]:
-    doc_snapshots = [
-        SimpleNamespace(
-            id=d.id,
-            original_filename=d.original_filename,
-            extracted_text=d.extracted_text or "",
-        )
-        for d in docs
-    ]
-    sources: list[dict[str, object]] = []
-    try:
-        rag_result = await asyncio.to_thread(
-            rag_service.answer_question,
-            current.id,
-            doc_snapshots,
-            question,
-        )
-    except Exception:
-        logger.exception("RAG LLM call failed for chat message")
-        answer = (
-            "Could not get an AI reply. Check LLM_API_KEY, that LLM_MODEL is valid for your provider "
-            f"(current: '{settings.llm_model}' at {settings.llm_base_url}), and the server can reach that URL. "
-            "If you use Groq, model IDs look like 'llama-3.3-70b-versatile', not OpenRouter slugs. "
-            "See the API terminal log for details."
-        )
+    if settings.rag_enabled and (settings.llm_api_key or "").strip():
+        try:
+            doc_ids = [d.id for d in docs]
+            rag_result = await asyncio.to_thread(
+                rag_answer_question,
+                current.id,
+                doc_ids,
+                question,
+            )
+            if isinstance(rag_result, dict):
+                answer = str(rag_result.get("answer", ""))
+                raw_sources = rag_result.get("sources", [])
+                sources = [s for s in raw_sources if isinstance(s, dict)] if isinstance(raw_sources, list) else []
+            else:
+                answer = str(rag_result)
+                sources = []
+        except Exception:
+            logger.exception("RAG chat failed; falling back to mock")
+            doc_snapshots = [
+                SimpleNamespace(original_filename=d.original_filename, extracted_text=d.extracted_text or "")
+                for d in docs
+            ]
+            answer = await asyncio.to_thread(
+                ai_service.mock_answer,
+                question,
+                [d.original_filename for d in doc_snapshots],
+                "\n\n".join(d.extracted_text for d in doc_snapshots),
+            )
+            sources = []
     else:
-        if isinstance(rag_result, dict):
-            answer = rag_result.get("answer", "")
-            raw_sources = rag_result.get("sources", [])
-            if isinstance(raw_sources, list):
-                sources = [s for s in raw_sources if isinstance(s, dict)]
-        else:
-            answer = rag_result
+        doc_snapshots = [
+            SimpleNamespace(original_filename=d.original_filename, extracted_text=d.extracted_text or "")
+            for d in docs
+        ]
+        answer = await asyncio.to_thread(
+            ai_service.mock_answer,
+            question,
+            [d.original_filename for d in doc_snapshots],
+            "\n\n".join(d.extracted_text for d in doc_snapshots),
+        )
+        sources = []
 
     if not isinstance(answer, str):
         answer = str(answer) if answer is not None else ""
