@@ -22,10 +22,10 @@ class Settings(BaseSettings):
     chroma_dir: Path = Path(__file__).resolve().parent.parent.parent / "chroma_db"
     chroma_collection: str = "querybot_documents"
     embedding_model_id: str = "BAAI/bge-base-en-v1.5"
-   # Inhein update karein
-    RAG_MAX_CHUNK_CHARS=1000   # Chunk thora chota rakhein taake focus behtar ho
-    RAG_CHUNK_OVERLAP=250      # Overlap barha dein (at least 25%)
-    RAG_TOP_K=25               # Isay thora sa aur barha dein (Safety ke liye)
+    # Env: RAG_MAX_CHUNK_CHARS, RAG_CHUNK_OVERLAP, RAG_TOP_K (pydantic-settings maps these)
+    rag_max_chunk_chars: int = 1000
+    rag_chunk_overlap: int = 250
+    rag_top_k: int = 25
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_api_key: str = ""
