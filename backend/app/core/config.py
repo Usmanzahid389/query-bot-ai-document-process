@@ -25,7 +25,13 @@ class Settings(BaseSettings):
     # Env: RAG_MAX_CHUNK_CHARS, RAG_CHUNK_OVERLAP, RAG_TOP_K (pydantic-settings maps these)
     rag_max_chunk_chars: int = 1000
     rag_chunk_overlap: int = 250
-    rag_top_k: int = 25
+    rag_top_k: int = 10
+    # Retrieval quality toggles (safe defaults; can be disabled independently)
+    rag_rerank_enabled: bool = True
+    rag_exact_numeric_match: bool = True
+    rag_table_boost: bool = True
+    rag_noise_penalty: bool = True
+    rag_keyword_top_n: int = 8
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_api_key: str = ""
